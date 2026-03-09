@@ -1,0 +1,33 @@
+{
+  "name": "NutritionLog",
+  "short_name": "NutritionLog",
+  "description": "A nutrition and macro tracking PWA. Part of the IRONLOG ecosystem.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#060a0e",
+  "theme_color": "#060a0e",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": [
+    "health",
+    "lifestyle",
+    "productivity"
+  ],
+  "scope": "/",
+  "lang": "en-US",
+  "shortcuts": [
+    {
+      "name": "Open NutritionLog",
+      "short_name": "NutritionLog",
+      "description": "Open NutritionLog",
+      "url": "/"
+    }
+  ]
+}
