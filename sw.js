@@ -61,7 +61,7 @@ self.addEventListener('fetch', (event) => {
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
           return res;
-        }).catch(() => cached);
+        }).catch(() => cached || new Response('', { status: 408, statusText: 'Font unavailable offline' }));
       })
     );
     return;
@@ -93,9 +93,9 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return res;
-      }).catch(() => cached);
+      }).catch(() => cached || caches.match('/index.html'));
       return cached || fetchPromise;
-    })
+    }).then((response) => response || new Response('Offline', { status: 503, statusText: 'Offline' }))
   );
 });
 
