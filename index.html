@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="NutritionLog"/>
 <meta name="theme-color" content="#060a0e"/>
 <meta name="description" content="NutritionLog — Smart macro & calorie tracker. Log meals, track body composition, hit your goals."/>
+<meta name="color-scheme" content="dark light"/>
 <title>NutritionLog by IRONLOG</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
@@ -29,12 +30,22 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(0.7) sepia(1) 
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
 .fade-up{animation:fadeUp .35s ease both}
+*:focus-visible{outline:2px solid #4ade80;outline-offset:2px;border-radius:4px}
+button:focus:not(:focus-visible){outline:none}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
 @media(orientation:landscape) and (max-height:500px){#root{display:none!important}#landscape-lock{display:flex!important}}
 #landscape-lock{display:none;position:fixed;inset:0;background:#08080d;z-index:99999;flex-direction:column;align-items:center;justify-content:center;gap:12px;font-family:'Outfit',sans-serif;color:#94a3b8;font-size:14px;text-align:center;padding:20px}
 </style>
 <link rel="manifest" href="./manifest.json"/>
 <link rel="apple-touch-icon" href="./icon.svg"/>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(()=>{});
+  });
+}
+</script>
 </head>
 <body>
 <div id="landscape-lock"><div style="font-size:32px">🔄</div><div>Please rotate your device to portrait mode</div></div>
@@ -184,6 +195,7 @@ const CloudSync={
 
 // ─── Helpers ───
 const uid=()=>Math.random().toString(36).slice(2)+Date.now().toString(36);
+const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};};
 const today=()=>new Date().toISOString().split("T")[0];
 const ago=(n)=>{const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];};
 const fmtFull=(d)=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});}catch(e){return d;}};
@@ -355,17 +367,17 @@ const IRON_RANKS=[
 function calcScore(s){
   let xp=0;
   const entries=s.nutrition||[];
-  // Each meal logged: 5 XP
-  let mealCount=0;entries.forEach(e=>{const meals=e.meals||{};Object.values(meals).forEach(arr=>{mealCount+=arr.length;});});
+  // Each meal item logged: 5 XP (meals is [{name, items}, ...])
+  let mealCount=0;entries.forEach(e=>{const meals=Array.isArray(e.meals)?e.meals:[];meals.forEach(m=>{mealCount+=(m.items||[]).length;});});
   xp+=mealCount*5;
   // Each logged day: +10 XP
   const days=new Set(entries.map(e=>e.date));xp+=days.size*10;
   // Hit protein goal days: +15 XP each
   const goals=s.goals||{};const proteinGoal=goals.protein||0;
-  entries.forEach(e=>{const tot=(e.totals||{}).protein||0;if(proteinGoal>0&&tot>=proteinGoal*0.9)xp+=15;});
+  entries.forEach(e=>{const tot=e.protein||0;if(proteinGoal>0&&tot>=proteinGoal*0.9)xp+=15;});
   // Hit calorie goal days: +20 XP each
-  const calGoal=goals.calories||0;
-  entries.forEach(e=>{const tot=(e.totals||{}).calories||0;if(calGoal>0&&tot>=calGoal*0.85&&tot<=calGoal*1.15)xp+=20;});
+  const calGoal=goals.cal||0;
+  entries.forEach(e=>{const tot=e.cal||0;if(calGoal>0&&tot>=calGoal*0.85&&tot<=calGoal*1.15)xp+=20;});
   // Body weight logs: +10 XP each
   xp+=(s.body||[]).filter(b=>b.weight).length*10;
   // Streak milestones
@@ -384,18 +396,18 @@ function calcScore(s){
 function getDailyMissions(s){
   const td=today();
   const todayEntry=(s.nutrition||[]).find(e=>e.date===td)||{meals:{},totals:{}};
-  const meals=todayEntry.meals||{};
-  const mealCount=Object.values(meals).reduce((a,arr)=>a+(arr?.length||0),0);
-  const totals=todayEntry.totals||{};
+  const meals=Array.isArray(todayEntry.meals)?todayEntry.meals:[];
+  const mealCount=meals.reduce((a,m)=>a+(m.items||[]).length,0);
   const goals=s.goals||{};
   const waterKey="nl-water-"+td;
   const water=(() => {try{return parseInt(localStorage.getItem(waterKey)||"0");}catch(e){return 0;}})();
   const bodyToday=(s.body||[]).some(b=>b.date===td&&b.weight);
+  const breakfastMeal=meals.find(m=>m.name==="Breakfast");
   return[
-    {icon:"🍳",title:"Log Breakfast",desc:"Add at least one breakfast item",xp:20,done:(meals.Breakfast||[]).length>0},
+    {icon:"🍳",title:"Log Breakfast",desc:"Add at least one breakfast item",xp:20,done:(breakfastMeal?.items||[]).length>0},
     {icon:"🥗",title:"Log 3 Meals",desc:"Log breakfast, lunch, and dinner",xp:30,done:mealCount>=3},
-    {icon:"💪",title:"Hit Protein Goal",desc:"Reach 90%+ of your protein target",xp:35,done:goals.protein>0&&totals.protein>=(goals.protein*0.9)},
-    {icon:"🎯",title:"Hit Calorie Goal",desc:"Stay within 15% of calorie target",xp:25,done:goals.calories>0&&totals.calories>=(goals.calories*0.85)&&totals.calories<=(goals.calories*1.15)},
+    {icon:"💪",title:"Hit Protein Goal",desc:"Reach 90%+ of your protein target",xp:35,done:goals.protein>0&&(todayEntry.protein||0)>=(goals.protein*0.9)},
+    {icon:"🎯",title:"Hit Calorie Goal",desc:"Stay within 15% of calorie target",xp:25,done:goals.cal>0&&(todayEntry.cal||0)>=(goals.cal*0.85)&&(todayEntry.cal||0)<=(goals.cal*1.15)},
     {icon:"💧",title:"8 Cups of Water",desc:"Log your full daily water intake",xp:20,done:water>=8},
     {icon:"⚖️",title:"Weigh In",desc:"Log today's body weight",xp:15,done:bodyToday},
   ];
@@ -619,12 +631,14 @@ const Btn=({children,v="primary",full,disabled,onClick,s:ex={}})=>{
   };
   return <button onClick={disabled?undefined:onClick} style={variants[v]||variants.primary}>{children}</button>;
 };
-const Field=({label,value,onChange,type="text",unit,placeholder,min,max,step,autoFocus})=>(
+const Field=({label,value,onChange,type="text",unit,placeholder,min,max,step,autoFocus,inputMode:im})=>(
   <div style={{marginBottom:12}}>
-    {label&&<div style={{fontSize:11,color:V.text3,textTransform:"uppercase",letterSpacing:".08em",marginBottom:6,fontWeight:600}}>{label}</div>}
+    {label&&<label style={{display:"block",fontSize:11,color:V.text3,textTransform:"uppercase",letterSpacing:".08em",marginBottom:6,fontWeight:600}}>{label}</label>}
     <div style={{position:"relative"}}>
       <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
         min={min} max={max} step={step} autoFocus={autoFocus}
+        inputMode={im||(type==="number"?"decimal":type==="password"?"numeric":undefined)}
+        aria-label={label}
         style={{width:"100%",padding:"12px 14px",paddingRight:unit?44:14,background:"rgba(255,255,255,0.04)",
           border:`1px solid ${V.cardBorder}`,borderRadius:12,color:V.text,fontSize:16,fontFamily:V.mono,
           outline:"none",boxSizing:"border-box",WebkitAppearance:"none",minHeight:44}}/>
@@ -686,7 +700,7 @@ function ToastDisplay(){
   useEffect(()=>{if(t){const tm=setTimeout(()=>setT(null),2400);return()=>clearTimeout(tm);}},[t]);
   if(!t)return null;
   return ReactDOM.createPortal(
-    <div style={{position:"fixed",bottom:"calc(env(safe-area-inset-bottom,0px) + 88px)",left:"50%",transform:"translateX(-50%)",zIndex:9999,
+    <div role="status" aria-live="polite" style={{position:"fixed",bottom:"calc(env(safe-area-inset-bottom,0px) + 88px)",left:"50%",transform:"translateX(-50%)",zIndex:9999,
       background:`${t.color}18`,border:`1px solid ${t.color}30`,borderRadius:12,padding:"10px 18px",
       backdropFilter:"blur(12px)",fontSize:13,fontWeight:600,color:t.color,whiteSpace:"nowrap",
       animation:"fadeUp .25s ease"}}>
@@ -851,7 +865,9 @@ function BarcodeScanner({onResult,onClose}){
         const protein=Math.round(n.proteins_serving||n.proteins_100g||0);
         const carbs=Math.round(n.carbohydrates_serving||n.carbohydrates_100g||0);
         const fat=Math.round(n.fat_serving||n.fat_100g||0);
-        onResult({name:`${p.product_name||"Food"} (${serv})`,cal,protein,carbs,fat});
+        const safeName=String(p.product_name||"Food").replace(/[<>&"']/g,"").slice(0,100);
+        const safeServ=String(serv).replace(/[<>&"']/g,"").slice(0,30);
+        onResult({name:`${safeName} (${safeServ})`,cal,protein,carbs,fat});
         stopCamera();onClose();
       }else{setError("Product not found. Try manual entry.");setLoading(false);}
     }catch(e){setError("Lookup failed. Check connection.");setLoading(false);}
@@ -959,7 +975,8 @@ function HomeTab({s,d,score,missions}){
   const hour=new Date().getHours();
   const greeting=hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
   const todayN2=s.nutrition.find(n=>n.date===td);
-  const totalMealItems=todayN2?todayN2.meals?.reduce((t,m)=>(m.items||[]).length+t,0)||0:0;
+  const todayMeals=Array.isArray(todayN2?.meals)?todayN2.meals:[];
+  const totalMealItems=todayMeals.reduce((t,m)=>(m.items||[]).length+t,0);
   return(
     <div className="fade-up" style={{display:"flex",flexDirection:"column",gap:12}}>
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderRadius:12,background:`${score.rank.color}10`,border:`1px solid ${score.rank.color}25`,cursor:"pointer"}}>
@@ -1021,10 +1038,10 @@ function HomeTab({s,d,score,missions}){
       </Btn>
 
       {/* Today's meals preview */}
-      {todayN2?.meals?.some(m=>(m.items||[]).length>0)&&(
+      {todayMeals.some(m=>(m.items||[]).length>0)&&(
         <Card style={{padding:12}}>
           <div style={{fontSize:10,fontWeight:700,color:V.text3,textTransform:"uppercase",letterSpacing:".06em",marginBottom:10}}>Today's Meals</div>
-          {todayN2.meals.filter(m=>(m.items||[]).length>0).map((meal,i)=>{
+          {todayMeals.filter(m=>(m.items||[]).length>0).map((meal,i)=>{
             const mCal=(meal.items||[]).reduce((s,it)=>s+it.cal,0);
             const mProt=(meal.items||[]).reduce((s,it)=>s+it.protein,0);
             return(
@@ -1328,7 +1345,7 @@ function LogTab({s,d}){
             <Card key={n.id} onClick={()=>editEntry(n)} style={{padding:14,cursor:"pointer",marginBottom:8}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:12,color:V.text2}}>{fmtFull(n.date)}{n.date===td&&<span style={{marginLeft:6,fontSize:10,color:V.accent,fontWeight:700}}>Today</span>}</span>
-                <button onClick={e=>{e.stopPropagation();ConfirmCtrl.show("Delete nutrition log?",fmtFull(n.date),()=>{d({type:"DEL_N",id:n.id});Toast.show("Deleted",V.danger);});}} style={{background:"none",border:"none",padding:4,cursor:"pointer"}}>{I.trash({s:13,c:V.text3})}</button>
+                <button aria-label={`Delete nutrition log for ${fmtFull(n.date)}`} onClick={e=>{e.stopPropagation();ConfirmCtrl.show("Delete nutrition log?",fmtFull(n.date),()=>{const deleted=n;d({type:"DEL_N",id:n.id});UndoMgr.show("Nutrition log deleted",()=>d({type:"ADD_N",n:deleted}),V.danger);});}} style={{background:"none",border:"none",padding:4,cursor:"pointer"}}>{I.trash({s:13,c:V.text3})}</button>
               </div>
               <div style={{display:"flex",gap:12,marginTop:6,alignItems:"baseline"}}>
                 <span style={{fontSize:18,fontWeight:700,color:V.warn,fontFamily:V.mono}}>{n.cal}<span style={{fontSize:10,color:V.text3}}> kcal</span></span>
@@ -1504,7 +1521,7 @@ function BodyTab({s,d}){
         <Card key={m.id} style={{padding:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={{fontSize:12,color:V.text2}}>{fmtFull(m.date)}</span>
-            <button onClick={()=>ConfirmCtrl.show("Delete body log?",fmtFull(m.date),()=>{d({type:"DEL_B",id:m.id});Toast.show("Deleted",V.danger);})} style={{background:"none",border:"none",padding:4,cursor:"pointer"}}>{I.trash({s:13,c:V.text3})}</button>
+            <button aria-label={`Delete body log for ${fmtFull(m.date)}`} onClick={()=>ConfirmCtrl.show("Delete body log?",fmtFull(m.date),()=>{const deleted=m;d({type:"DEL_B",id:m.id});UndoMgr.show("Body log deleted",()=>d({type:"ADD_B",b:deleted}),V.danger);})} style={{background:"none",border:"none",padding:4,cursor:"pointer"}}>{I.trash({s:13,c:V.text3})}</button>
           </div>
           <div style={{display:"flex",gap:16,marginTop:6}}>
             <span style={{fontSize:16,fontWeight:700,color:V.purple,fontFamily:V.mono}}>{(parseFloat(m.weight)||0).toFixed(1)}<span style={{fontSize:10,color:V.text3}}>{wUnit(s.units)}</span></span>
@@ -1666,7 +1683,7 @@ function TrendsTab({s}){
 }
 
 // ─── SETTINGS TAB ───
-function SettingsTab({s,d,setOnboarded}){
+function SettingsTab({s,d,installPrompt,onInstalled}){
   const [goals,setGoals]=useState(s.goals);
   const [profile,setProfile]=useState(s.profile);
   const [open,setOpen]=useState(null);
@@ -1772,6 +1789,17 @@ function SettingsTab({s,d,setOnboarded}){
         <Btn full onClick={saveProfile}>Save Profile</Btn>
       </Row>
 
+      {installPrompt&&(
+        <div style={{padding:"14px 16px",borderRadius:14,background:`linear-gradient(135deg,${V.accent}10,${V.accent2}08)`,border:`1.5px solid ${V.accent}30`,marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:24}}>📲</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:14,fontWeight:700,color:V.text}}>Install NutritionLog</div>
+            <div style={{fontSize:11,color:V.text3}}>Add to home screen for the best experience</div>
+          </div>
+          <button onClick={async()=>{installPrompt.prompt();const r=await installPrompt.userChoice;if(r.outcome==="accepted"){onInstalled();Toast.show("App installed!",V.accent);}}} style={{padding:"8px 16px",borderRadius:10,background:V.accent,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,color:"#060a0e",fontFamily:V.font,flexShrink:0}}>Install</button>
+        </div>
+      )}
+
       <Row id="appearance" icon="🎨" label="Appearance" desc={V.mode==="dark"?"Dark mode":"Light mode"}>
         <div style={{display:"flex",gap:8}}>
           {["dark","light"].map(m=>(
@@ -1780,6 +1808,7 @@ function SettingsTab({s,d,setOnboarded}){
             </button>
           ))}
         </div>
+        <div style={{fontSize:10,color:V.text3,marginTop:8}}>App will reload to apply theme</div>
       </Row>
 
       <Row id="account" icon="🔐" label="Account" desc={LS.get("ft-session-email")||"Not signed in"}>
@@ -1796,13 +1825,36 @@ function SettingsTab({s,d,setOnboarded}){
         <Btn v="danger" full onClick={logout}>Sign Out</Btn>
       </Row>
 
-      <Row id="data" icon="💾" label="Data" desc="Export or clear your logs">
+      <Row id="data" icon="💾" label="Data" desc="Export, import, or clear your logs">
         <Btn v="secondary" full onClick={()=>{
-          const data={nutrition:s.nutrition,body:s.body,goals:s.goals,exportedAt:new Date().toISOString()};
+          const data={nutrition:s.nutrition,body:s.body,goals:s.goals,units:s.units,profile:s.profile,exportedAt:new Date().toISOString()};
           const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
-          const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`nutritionlog-export-${today()}.json`;a.click();
+          const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`nutritionlog-export-${today()}.json`;a.click();URL.revokeObjectURL(url);
           Toast.show("Export downloaded",V.accent);
         }} s={{marginBottom:8}}>Export Data (JSON)</Btn>
+        <Btn v="secondary" full onClick={()=>{
+          const inp=document.createElement("input");inp.type="file";inp.accept=".json";
+          inp.onchange=(e)=>{
+            const file=e.target.files?.[0];if(!file)return;
+            const reader=new FileReader();
+            reader.onload=(ev)=>{
+              try{
+                const data=JSON.parse(ev.target.result);
+                if(!data.nutrition&&!data.body){Toast.show("Invalid file format",V.danger);return;}
+                ConfirmCtrl.show("Import data?",`This will merge ${(data.nutrition||[]).length} nutrition logs and ${(data.body||[]).length} body logs with your existing data.`,()=>{
+                  const mergedN=[...s.nutrition];
+                  (data.nutrition||[]).forEach(n=>{if(!mergedN.find(e=>e.id===n.id))mergedN.push(n);});
+                  const mergedB=[...s.body];
+                  (data.body||[]).forEach(b=>{if(!mergedB.find(e=>e.id===b.id))mergedB.push(b);});
+                  d({type:"INIT",p:{...s,nutrition:mergedN.sort((a,b)=>b.date.localeCompare(a.date)),body:mergedB.sort((a,b)=>b.date.localeCompare(a.date))}});
+                  Toast.show("Data imported successfully",V.accent);
+                });
+              }catch(err){Toast.show("Failed to parse file",V.danger);}
+            };
+            reader.readAsText(file);
+          };
+          inp.click();
+        }} s={{marginBottom:8}}>Import Data (JSON)</Btn>
         <Btn v="danger" full onClick={()=>ConfirmCtrl.show("Clear all nutrition logs?","This cannot be undone.",()=>{
           d({type:"INIT",p:{...s,nutrition:[],body:[]}});Toast.show("Data cleared",V.danger);
         })}>Clear All Logs</Btn>
@@ -1891,7 +1943,7 @@ function Onboarding({d}){
         {siStep==="email"&&(
           <>
             <Field label="Email" type="email" value={siEmail} onChange={setSiEmail} placeholder="you@email.com"/>
-            <Field label="PIN (4-12 digits)" type="number" value={siPin} onChange={setSiPin} placeholder="••••"/>
+            <Field label="PIN (4-12 digits)" type="password" value={siPin} onChange={setSiPin} placeholder="••••"/>
             <Btn full onClick={signIn} disabled={siLoading||!siEmail||!siPin}>{siLoading?"Signing in...":"Sign In"}</Btn>
             <button onClick={()=>setSiStep("forgot")} style={{width:"100%",marginTop:12,padding:"10px",background:"none",border:"none",color:V.text3,fontSize:12,cursor:"pointer"}}>Forgot PIN?</button>
           </>
@@ -1914,7 +1966,7 @@ function Onboarding({d}){
         )}
         {siStep==="forgot_newpin"&&(
           <>
-            <Field label="New PIN" type="number" value={forgotNewPin} onChange={setForgotNewPin} placeholder="••••"/>
+            <Field label="New PIN" type="password" value={forgotNewPin} onChange={setForgotNewPin} placeholder="••••"/>
             <Btn full onClick={async()=>{setSiLoading(true);const r=await CloudSync.resetPin(forgotEmail,forgotCode,forgotNewPin);setSiLoading(false);if(r?.success){setSiEmail(forgotEmail);setSiPin(forgotNewPin);setSiStep("email");setSiError("");}else setSiError(r?.error||"Reset failed");}}>
               {siLoading?"Resetting...":"Reset PIN"}
             </Btn>
@@ -1999,8 +2051,8 @@ function Onboarding({d}){
                 {pinErr&&<div style={{padding:"10px 14px",borderRadius:10,background:"rgba(251,146,60,0.1)",color:V.warn,fontSize:13,marginBottom:14}}>{pinErr}</div>}
                 <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="your@email.com"/>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <Field label="PIN (4-12 digits)" type="number" value={pin} onChange={setPin} placeholder="••••"/>
-                  <Field label="Confirm PIN" type="number" value={confirmPin} onChange={setConfirmPin} placeholder="••••"/>
+                  <Field label="PIN (4-12 digits)" type="password" value={pin} onChange={setPin} placeholder="••••"/>
+                  <Field label="Confirm PIN" type="password" value={confirmPin} onChange={setConfirmPin} placeholder="••••"/>
                 </div>
                 <div style={{padding:"10px 14px",borderRadius:10,background:"rgba(255,255,255,0.03)",fontSize:11,color:V.text3,marginBottom:14,lineHeight:1.5}}>
                   Your data syncs across all your devices and is accessible from IronLog too. Use the same PIN for both apps.
@@ -2018,6 +2070,33 @@ function Onboarding({d}){
   );
 }
 
+// ─── Debounced cloud sync (2s delay to batch rapid changes) ───
+const debouncedSync=debounce((s)=>{
+  const email=s.profile?.email||LS.get("ft-session-email");
+  const deviceId=LS.get("ft-device-id");
+  if(email&&deviceId){
+    const syncData={nutrition:s.nutrition,body:s.body,goals:s.goals,units:s.units,profile:s.profile};
+    CloudSync.push(email,deviceId,syncData).catch(()=>{});
+  }
+},2000);
+
+// ─── Error Boundary ───
+class ErrorBoundary extends React.Component{
+  constructor(props){super(props);this.state={hasError:false,error:null};}
+  static getDerivedStateFromError(error){return{hasError:true,error};}
+  render(){
+    if(this.state.hasError){
+      return React.createElement("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",padding:24,textAlign:"center",background:"#060a0e"}},
+        React.createElement("div",{style:{fontSize:48,marginBottom:12}},"⚠️"),
+        React.createElement("div",{style:{fontSize:18,fontWeight:700,color:"#e2e8f0",marginBottom:8}},"Something went wrong"),
+        React.createElement("div",{style:{fontSize:13,color:"#94a3b8",marginBottom:20,maxWidth:300}},this.state.error?.message||"An unexpected error occurred"),
+        React.createElement("button",{onClick:()=>window.location.reload(),style:{padding:"12px 24px",borderRadius:12,border:"none",background:"#4ade80",color:"#060a0e",fontSize:14,fontWeight:600,cursor:"pointer"}},"Reload App")
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ─── APP ───
 function App(){
   const [s,d]=useReducer(reducer,init);
@@ -2025,6 +2104,22 @@ function App(){
   const score=useMemo(()=>calcScore(s),[s.nutrition,s.body,s.goals]);
   const missions=useMemo(()=>getDailyMissions(s),[s.nutrition,s.body,s.goals]);
   const {celebrating,celebRank,dismiss:dismissLevel}=useLevelUp(score,"nl-last-level");
+  const [online,setOnline]=useState(navigator.onLine);
+  const [installPrompt,setInstallPrompt]=useState(null);
+  useEffect(()=>{
+    const on=()=>setOnline(true);const off=()=>setOnline(false);
+    window.addEventListener("online",on);window.addEventListener("offline",off);
+    const bip=(e)=>{e.preventDefault();setInstallPrompt(e);};
+    window.addEventListener("beforeinstallprompt",bip);
+    return()=>{window.removeEventListener("online",on);window.removeEventListener("offline",off);window.removeEventListener("beforeinstallprompt",bip);};
+  },[]);
+
+  // Handle URL tab param for manifest shortcuts
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);
+    const tab=params.get("tab");
+    if(tab&&["home","log","body","trends","settings"].includes(tab)){d({type:"TAB",tab});}
+  },[]);
 
   // Load data on boot
   useEffect(()=>{
@@ -2074,21 +2169,19 @@ function App(){
     LS.set("ft-profile",s.profile);
     LS.set("ft-onb",s.onboarded);
     LS.set("nl-onb",s.onboarded);
-    // Auto-sync to cloud
+    // Auto-sync to cloud (debounced)
     if(s.onboarded&&s.profile?.email){
-      const email=s.profile.email||LS.get("ft-session-email");
-      const deviceId=LS.get("ft-device-id");
-      if(email&&deviceId){
-        const syncData={nutrition:s.nutrition,body:s.body,goals:s.goals,units:s.units,profile:s.profile};
-        CloudSync.push(email,deviceId,syncData).catch(()=>{});
-      }
+      debouncedSync(s);
     }
   },[s.nutrition,s.body,s.goals,s.units,s.profile,s.onboarded]);
 
   if(!s.loaded)return(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:12,background:V.bg}}>
-      <div style={{fontSize:36}}>🥗</div>
-      <div style={{fontSize:11,color:V.text3,fontFamily:V.mono,animation:"pulse 1.5s infinite"}}>Loading...</div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:16,background:V.bg}}>
+      <div style={{fontSize:40}}>🥗</div>
+      <div style={{fontSize:13,color:V.text3,fontFamily:V.mono,animation:"pulse 1.5s infinite"}}>Loading your data...</div>
+      <div style={{width:180,height:4,borderRadius:2,background:"rgba(255,255,255,0.05)",overflow:"hidden"}}>
+        <div style={{width:"40%",height:"100%",borderRadius:2,background:`linear-gradient(90deg,transparent,${V.accent}40,transparent)`,animation:"shimmer 1.5s infinite"}}/>
+      </div>
     </div>
   );
 
@@ -2105,7 +2198,7 @@ function App(){
   return(
     <div style={{height:"100%",display:"flex",flexDirection:"column",background:V.bg}}>
       {/* Header */}
-      <div style={{paddingTop:`max(16px,env(safe-area-inset-top,0px))`,paddingLeft:16,paddingRight:16,paddingBottom:10,background:V.navBg,borderBottom:`1px solid ${V.cardBorder}`,flexShrink:0,backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
+      <header style={{paddingTop:`max(16px,env(safe-area-inset-top,0px))`,paddingLeft:16,paddingRight:16,paddingBottom:10,background:V.navBg,borderBottom:`1px solid ${V.cardBorder}`,flexShrink:0,backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:22}}>🥗</span>
@@ -2129,32 +2222,39 @@ function App(){
             );
           })()}
         </div>
-      </div>
+      </header>
+
+      {/* Offline indicator */}
+      {!online&&(
+        <div style={{background:"rgba(251,146,60,0.15)",borderBottom:`1px solid rgba(251,146,60,0.25)`,padding:"6px 16px",textAlign:"center",fontSize:11,fontWeight:600,color:V.warn,flexShrink:0}}>
+          You're offline — changes will sync when reconnected
+        </div>
+      )}
 
       {/* Content */}
-      <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain"}}>
+      <main style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain"}} role="main">
         <div className="main-scroll" style={{paddingTop:16}}>
           {s.tab==="home"&&<HomeTab s={s} d={d} score={score} missions={missions}/>}
           {s.tab==="log"&&<LogTab s={s} d={d}/>}
           {s.tab==="body"&&<BodyTab s={s} d={d}/>}
           {s.tab==="trends"&&<TrendsTab s={s}/>}
-          {s.tab==="settings"&&<SettingsTab s={s} d={d}/>}
+          {s.tab==="settings"&&<SettingsTab s={s} d={d} installPrompt={installPrompt} onInstalled={()=>setInstallPrompt(null)}/>}
         </div>
-      </div>
+      </main>
 
       {/* Bottom Nav */}
-      <div className="tab-bar" style={{background:V.navBg,borderTop:`1px solid ${V.cardBorder}`,display:"flex",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",flexShrink:0,paddingTop:8}}>
+      <nav className="tab-bar" role="tablist" aria-label="Main navigation" style={{background:V.navBg,borderTop:`1px solid ${V.cardBorder}`,display:"flex",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",flexShrink:0,paddingTop:8}}>
         {tabs.map(tab=>{
           const active=s.tab===tab.id;
           return(
-            <button key={tab.id} onClick={()=>{Haptic.light();d({type:"TAB",tab:tab.id});}} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,background:"none",border:"none",cursor:"pointer",padding:"4px 0",WebkitTapHighlightColor:"transparent",transition:"all .15s"}}>
+            <button key={tab.id} onClick={()=>{Haptic.light();d({type:"TAB",tab:tab.id});}} aria-label={tab.label} aria-current={active?"page":undefined} role="tab" style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,background:"none",border:"none",cursor:"pointer",padding:"4px 0",WebkitTapHighlightColor:"transparent",transition:"all .15s"}}>
               {tab.icon({s:21,c:active?V.accent:V.text3})}
               <span style={{fontSize:9,fontWeight:active?700:500,color:active?V.accent:V.text3,transition:"color .15s"}}>{tab.label}</span>
               {active&&<div style={{width:4,height:4,borderRadius:2,background:V.accent,marginTop:-2}}/>}
             </button>
           );
         })}
-      </div>
+      </nav>
 
       <ToastDisplay/>
       <GlobalConfirm/>
@@ -2164,7 +2264,7 @@ function App(){
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App/></ErrorBoundary>);
 </script>
 </body>
 </html>
