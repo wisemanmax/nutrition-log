@@ -395,7 +395,7 @@ function calcScore(s){
 // ─── NutritionLog Daily Missions ───
 function getDailyMissions(s){
   const td=today();
-  const todayEntry=(s.nutrition||[]).find(e=>e.date===td)||{meals:{},totals:{}};
+  const todayEntry=(s.nutrition||[]).find(e=>e.date===td)||{meals:[],totals:{}};
   const meals=Array.isArray(todayEntry.meals)?todayEntry.meals:[];
   const mealCount=meals.reduce((a,m)=>a+(m.items||[]).length,0);
   const goals=s.goals||{};
@@ -1189,7 +1189,7 @@ function LogTab({s,d}){
 
   const totalItems=form.meals.reduce((s,m)=>(m.items||[]).length+s,0);
   const favs=LS.get("nl-meal-favs")||[];
-  const ffBrands=["All",...new Set(FF_HACKS.map(h=>h.r)).values()].sort();
+  const ffBrands=["All",...[...new Set(FF_HACKS.map(h=>h.r))].sort()];
 
   return(
     <div className="fade-up" style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -1413,7 +1413,7 @@ function BodyTab({s,d}){
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <div style={{gridColumn:"1/-1"}}>
-          <Stat icon={I.scale} label="Weight" value={(parseFloat(latest?.weight)||0).toFixed(1)||"—"} unit={wUnit(s.units)} color={V.purple}
+          <Stat icon={I.scale} label="Weight" value={latest?.weight?parseFloat(latest.weight).toFixed(1):"—"} unit={wUnit(s.units)} color={V.purple}
             sub={wc!==0?`${wc>0?"↗ +":"↘ "}${wc.toFixed(1)} ${wUnit(s.units)}`:latest?"→ stable":undefined}/>
           {s.goals?.goalWeight&&latest?.weight&&(()=>{
             const cur=parseFloat(latest.weight)||0,goal=parseFloat(s.goals.goalWeight)||0;
@@ -1435,7 +1435,7 @@ function BodyTab({s,d}){
             );
           })()}
         </div>
-        <Stat icon={I.target} label="Body Fat" value={((parseFloat(latest?.bf)||0).toFixed(1))||"—"} unit="%" color={V.danger}/>
+        <Stat icon={I.target} label="Body Fat" value={latest?.bf?parseFloat(latest.bf).toFixed(1):"—"} unit="%" color={V.danger}/>
         <Stat icon={I.flame} label="Lean Mass" value={latest?.bf&&latest?.weight?(parseFloat(latest.weight)*(1-(parseFloat(latest.bf)||0)/100)).toFixed(1):"—"} unit={wUnit(s.units)} color={V.accent}/>
       </div>
 
@@ -1527,7 +1527,7 @@ function BodyTab({s,d}){
             <span style={{fontSize:16,fontWeight:700,color:V.purple,fontFamily:V.mono}}>{(parseFloat(m.weight)||0).toFixed(1)}<span style={{fontSize:10,color:V.text3}}>{wUnit(s.units)}</span></span>
             {m.bf>0&&<span style={{fontSize:14,color:V.danger,fontFamily:V.mono}}>{(parseFloat(m.bf)||0).toFixed(1)}<span style={{fontSize:10,color:V.text3}}>%bf</span></span>}
           </div>
-          {(m.waist||m.chest||m.arms)&&(
+          {(m.waist>0||m.chest>0||m.arms>0)&&(
             <div style={{display:"flex",gap:10,marginTop:4,fontSize:10,color:V.text3,fontFamily:V.mono}}>
               {m.waist>0&&<span>W:{m.waist}"</span>}
               {m.chest>0&&<span>Ch:{m.chest}"</span>}
