@@ -59,7 +59,10 @@ var loadStatus={};
 function loadScript(url,name){
   return new Promise(function(resolve,reject){
     var s=document.createElement('script');s.src=url;s.crossOrigin='anonymous';
-    s.onload=function(){loadStatus[name]='ok';resolve();};
+    s.onload=function(){
+      if(typeof window[name]==='undefined'){loadStatus[name]='FAILED';reject(new Error(name+' loaded but not defined from '+url));return;}
+      loadStatus[name]='ok';resolve();
+    };
     s.onerror=function(){loadStatus[name]='FAILED';reject(new Error(name+' failed from '+url));};
     document.head.appendChild(s);
   });
@@ -77,6 +80,10 @@ function showError(msg){
   .then(function(){
     return loadScript('https://cdn.jsdelivr.net/npm/react-is@18.3.1/umd/react-is.production.min.js','ReactIs')
     .catch(function(){return loadScript('https://unpkg.com/react-is@18/umd/react-is.production.min.js','ReactIs');});
+  })
+  .then(function(){
+    return loadScript('https://cdn.jsdelivr.net/npm/prop-types@15.8.1/prop-types.min.js','PropTypes')
+    .catch(function(){return loadScript('https://unpkg.com/prop-types@15.8.1/prop-types.min.js','PropTypes');});
   })
   .then(function(){
     return loadScript('https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js','Recharts')
