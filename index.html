@@ -75,8 +75,12 @@ function showError(msg){
     .catch(function(){return loadScript('https://unpkg.com/react-dom@18/umd/react-dom.production.min.js','ReactDOM');});
   })
   .then(function(){
-    return loadScript('https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js','Recharts')
-    .catch(function(){return loadScript('https://unpkg.com/recharts@2.5.0/umd/Recharts.js','Recharts');});
+    return loadScript('https://cdn.jsdelivr.net/npm/react-is@18.3.1/umd/react-is.production.min.js','ReactIs')
+    .catch(function(){return loadScript('https://unpkg.com/react-is@18/umd/react-is.production.min.js','ReactIs');});
+  })
+  .then(function(){
+    return loadScript('https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js','Recharts')
+    .catch(function(){return loadScript('https://unpkg.com/recharts@2.5.0/umd/Recharts.min.js','Recharts');});
   })
   .then(function(){
     return loadScript('https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.0/babel.min.js','Babel')
