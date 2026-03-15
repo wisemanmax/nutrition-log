@@ -108,94 +108,159 @@ const{BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveCo
 // ─── Persistence ───
 const LS={
   get:(k)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch(e){return null;}},
-  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){console.warn("Error:",e);}},
 };
 
-// ─── Cookie (SSO across ironlog.space subdomains) ───
+// ─── Cookie (SSO across .ironlog.space) ───
 const Cookie={
-  get:(n)=>{const m=document.cookie.match(new RegExp("(^| )"+n+"=([^;]+)"));return m?decodeURIComponent(m[2]):null;},
-  set:(n,v,days=30)=>{const e=new Date(Date.now()+days*864e5).toUTCString();document.cookie=`${n}=${encodeURIComponent(v)};expires=${e};domain=.ironlog.space;path=/;secure;samesite=lax`;},
-  clear:(n)=>{document.cookie=`${n}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;domain=.ironlog.space;path=/;secure`;}
-};
+  get:(name)=>{const m=document.cookie.match(new RegExp("(^| )"+name+"=([^;]+)"));return m?decodeURIComponent(m[2]):null;},
+  set:(name,value,days=30)=>{const exp=new Date(Date.now()+days*864e5).toUTCString();document.cookie=`${name}=${encodeURIComponent(value)};
 
-const SYNC_URL="https://api.ironlog.space";
+const SYNC_URL=LS.get("ft-api-url")||"https://api.ironlog.space";
 
-// ─── Auth ───
 const AuthToken={
-  getHeaders:(email)=>({
-    "Content-Type":"application/json",
-    ...(LS.get("ft-session-token")?{"X-Session-Token":LS.get("ft-session-token")}:{}),
-    "X-Auth-Token":email||"legacy"
-  })
-};
+  // Legacy — kept for backward compat during migration
+  init:(email)=>{},
+  generate:(email)=>"",
+  getHeaders:(email)=>{
+    const sessionToken=LS.get("ft-session-token");
+    return{
+      "Content-Type":"application/json",
+      ...(sessionToken?{"X-Session-Token":sessionToken}:{}),
+      "X-Auth-Token":email||"legacy",
+    };
 
 const SessionManager={
+  // Create session after signup (called with email + PIN)
   create:async(email,pin,deviceId)=>{
     try{
-      const r=await fetch(`${SYNC_URL}/api/auth/session`,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({action:"create",email:email.toLowerCase(),pin,deviceId:deviceId||LS.get("ft-device-id")})});
-      const j=await r.json();
-      if(j.success&&j.token){
-        LS.set("ft-session-token",j.token);LS.set("ft-session-email",email.toLowerCase());
-        LS.set("ft-session-expires",j.expires_at);
-        Cookie.set("ironlog_session",j.token,30);
-        return{success:true,token:j.token};
+      const res=await fetch(`${SYNC_URL}/api/auth/session`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"create",email:email.toLowerCase(),pin,deviceId:deviceId||LS.get("ft-device-id")})
+      });
+      const json=await res.json();
+      if(json.success&&json.token){
+        LS.set("ft-session-token",json.token);
+        LS.set("ft-session-email",email.toLowerCase());
+        LS.set("ft-session-expires",json.expires_at);
+        Cookie.set("ironlog_session",json.token,30); // SSO across subdomains
+        return{success:true,token:json.token};
       }
-      return{success:false,error:j.error,attempts_remaining:j.attempts_remaining};
+      return{success:false,error:json.error,attempts_remaining:json.attempts_remaining};
     }catch(e){return{success:false,error:"Connection failed"};}
   },
+  // Check if we have a valid session
   hasSession:()=>{
-    const t=LS.get("ft-session-token"),exp=LS.get("ft-session-expires");
-    if(!t)return false;
-    if(exp&&new Date(exp)<new Date()){LS.set("ft-session-token",null);return false;}
+    const token=LS.get("ft-session-token");
+    const expires=LS.get("ft-session-expires");
+    if(!token)return false;
+    if(expires&&new Date(expires)<new Date()){LS.set("ft-session-token",null);return false;}
     return true;
   },
+  // Revoke (logout)
   revoke:async()=>{
-    const t=LS.get("ft-session-token");
-    if(t){try{await fetch(`${SYNC_URL}/api/auth/session`,{method:"POST",headers:{"Content-Type":"application/json","X-Session-Token":t},body:JSON.stringify({action:"revoke",token:t})});}catch(e){}}
-    LS.set("ft-session-token",null);LS.set("ft-session-email",null);LS.set("ft-session-expires",null);
-    Cookie.clear("ironlog_session");
-  }
+    const token=LS.get("ft-session-token");
+    if(token){try{await fetch(`${SYNC_URL}/api/auth/session`,{method:"POST",headers:{"Content-Type":"application/json","X-Session-Token":token},body:JSON.stringify({action:"revoke",token})});}catch(e){}}
+    SentryUtil.breadcrumb("User signed out","auth");SentryUtil.reset();
+    LS.set("ft-session-token",null);LS.set("ft-session-email",null);LS.set("ft-session-expires",null);LS.set("ft-is-admin",null);
+    Cookie.clear("ironlog_session"); // Clear SSO cookie
+  },
+  // Check admin status (silent — never exposes admin to non-admins)
+  checkAdmin:async()=>{
+    const token=LS.get("ft-session-token");
+    const email=LS.get("ft-session-email")||LS.get("ft-profile")?.email;
+    if(!token&&!email)return false;
+    try{
+      const headers={"Content-Type":"application/json"};
+      if(token)headers["X-Session-Token"]=token;
+      if(email)headers["X-Auth-Token"]=email;
+      const res=await fetch(`${SYNC_URL}/api/admin`,{method:"POST",headers,
+        body:JSON.stringify({action:"check"})});
+      if(res.ok){const json=await res.json();if(json.isAdmin){LS.set("ft-is-admin",true);return true;}}
+      LS.set("ft-is-admin",null);return false;
+    }catch(e){return false;}
+  },
+  // ─── Forgot PIN (satellite apps — canonical /api/auth/session) ───
+  sendResetCode:async(email)=>{
+    try{
+      const res=await fetch(`${SYNC_URL}/api/auth/session`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"send_reset_code",email:email.toLowerCase()})});
+      return res.ok?{success:true}:{success:false,error:"Email not found"};
+    }catch(e){return{success:false,error:"Connection failed"};}
+  },
+  verifyResetCode:async(email,code)=>{
+    try{
+      const res=await fetch(`${SYNC_URL}/api/auth/session`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"verify_reset_code",email:email.toLowerCase(),code})});
+      return res.ok?{success:true}:{success:false,error:"Invalid code"};
+    }catch(e){return{success:false,error:"Connection failed"};}
+  },
+  setNewPin:async(email,code,newPin)=>{
+    try{
+      const res=await fetch(`${SYNC_URL}/api/auth/session`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"set_new_pin",email:email.toLowerCase(),resetToken:code,newPin})});
+      return res.ok?{success:true}:{success:false,error:"Reset failed"};
+    }catch(e){return{success:false,error:"Connection failed"};}
+  },
 };
 
-// ─── Cloud Sync ───
+// ─── Cloud Sync (nutritionlog) ───
+let _syncTimer=null;let _syncInFlight=false;
 const CloudSync={
-  pull:async(email,deviceId,lastSync)=>{
+  push:async(state)=>{
+    if(_syncInFlight)return;
+    const email=state.profile?.email||LS.get("ft-session-email");
+    if(!email)return;
+    _syncInFlight=true;
+    const payload=JSON.stringify({
+      email,
+      deviceId:LS.get("ft-device-id")||"unknown",
+      appVersion:"nutritionlog-1.0",
+      workouts:[],
+      nutrition:state.nutrition||[],
+      body:state.body||[],
+      photos:[],checkins:[],milestones:[],
+      settings:{goals:state.goals,units:state.units,
+        schedule:null,exercises:null,phases:[],injuries:[],
+        privacy:{},supplements:[],accountability:[],gamification:null},
+    });
     try{
-      const r=await fetch(`${SYNC_URL}/api/users`,{method:"POST",headers:AuthToken.getHeaders(email),
-        body:JSON.stringify({action:"pull",email,deviceId,lastSync})});
-      return r.ok?await r.json():null;
-    }catch(e){return null;}
+      const res=await fetch(`${SYNC_URL}/api/sync/push`,{method:"POST",headers:AuthToken.getHeaders(email),body:payload});
+      if(res.status===401){LS.set("ft-session-token",null);_syncInFlight=false;return;}
+      if(!res.ok)throw new Error("Push failed");
+    }catch(e){console.warn("Sync push error:",e);}
+    _syncInFlight=false;
   },
-  push:async(email,deviceId,data)=>{
-    try{
-      const r=await fetch(`${SYNC_URL}/api/users`,{method:"POST",headers:AuthToken.getHeaders(email),
-        body:JSON.stringify({action:"push",email,deviceId,...data})});
-      return r.ok?await r.json():null;
-    }catch(e){return null;}
+  debouncedPush:(state)=>{
+    if(_syncTimer)clearTimeout(_syncTimer);
+    _syncTimer=setTimeout(()=>CloudSync.push(state),3000);
   },
-  forgotPin:async(email)=>{
+  pull:async(email,deviceId,pin)=>{
     try{
-      const r=await fetch(`${SYNC_URL}/api/users`,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({action:"forgot_pin",email})});
-      return r.ok?await r.json():null;
-    }catch(e){return null;}
+      const res=await fetch(`${SYNC_URL}/api/sync/pull`,{
+        method:"POST",
+        headers:AuthToken.getHeaders(email),
+        body:JSON.stringify({email,deviceId,pin:pin||null}),
+      });
+      const json=await res.json();
+      if(res.status===403&&json.pin_required)return{pin_required:true};
+      if(res.status===403)return{wrong_pin:true,attempts_remaining:json.attempts_remaining,locked:json.locked};
+      if(res.status===429)return{locked:true,retry_minutes:json.retry_minutes};
+      if(json.success===false)return{error:json.error||"Account not found"};
+      if(!res.ok)return{error:"Server error"};
+      if(json.success)return json;
+      return null;
+    }catch(e){return{error:"Connection failed"};}
   },
-  verifyCode:async(email,code)=>{
-    try{
-      const r=await fetch(`${SYNC_URL}/api/users`,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({action:"verify_reset_code",email,code})});
-      return r.ok?await r.json():null;
-    }catch(e){return null;}
-  },
-  resetPin:async(email,code,newPin)=>{
-    try{
-      const r=await fetch(`${SYNC_URL}/api/users`,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({action:"reset_pin",email,code,newPin})});
-      return r.ok?await r.json():null;
-    }catch(e){return null;}
-  }
 };
+
+// ─── Device ID (persistent per device) ───
+if(!LS.get("ft-device-id")){
+  LS.set("ft-device-id","dev_"+Math.random().toString(36).slice(2,10)+Date.now().toString(36));
+}
 
 // ─── Helpers ───
 const uid=()=>Math.random().toString(36).slice(2)+Date.now().toString(36);
@@ -1957,7 +2022,7 @@ function Onboarding({d}){
         {siStep==="forgot"&&(
           <>
             <Field label="Email" type="email" value={forgotEmail} onChange={setForgotEmail} placeholder="your@email.com"/>
-            <Btn full onClick={async()=>{setSiLoading(true);const r=await CloudSync.forgotPin(forgotEmail);setSiLoading(false);if(r?.success)setSiStep("forgot_code");else setSiError(r?.error||"Email not found");}}>
+            <Btn full onClick={async()=>{setSiLoading(true);const r=await SessionManager.sendResetCode(forgotEmail);setSiLoading(false);if(r?.success)setSiStep("forgot_code");else setSiError(r?.error||"Email not found");}}>
               {siLoading?"Sending...":"Send Code"}
             </Btn>
           </>
@@ -1965,7 +2030,7 @@ function Onboarding({d}){
         {siStep==="forgot_code"&&(
           <>
             <Field label="6-digit Code" type="number" value={forgotCode} onChange={setForgotCode} placeholder="123456"/>
-            <Btn full onClick={async()=>{setSiLoading(true);const r=await CloudSync.verifyCode(forgotEmail,forgotCode);setSiLoading(false);if(r?.success)setSiStep("forgot_newpin");else setSiError(r?.error||"Invalid code");}}>
+            <Btn full onClick={async()=>{setSiLoading(true);const r=await SessionManager.verifyResetCode(forgotEmail,forgotCode);setSiLoading(false);if(r?.success)setSiStep("forgot_newpin");else setSiError(r?.error||"Invalid code");}}>
               {siLoading?"Verifying...":"Verify"}
             </Btn>
           </>
@@ -1973,7 +2038,7 @@ function Onboarding({d}){
         {siStep==="forgot_newpin"&&(
           <>
             <Field label="New PIN" type="password" value={forgotNewPin} onChange={setForgotNewPin} placeholder="••••"/>
-            <Btn full onClick={async()=>{setSiLoading(true);const r=await CloudSync.resetPin(forgotEmail,forgotCode,forgotNewPin);setSiLoading(false);if(r?.success){setSiEmail(forgotEmail);setSiPin(forgotNewPin);setSiStep("email");setSiError("");}else setSiError(r?.error||"Reset failed");}}>
+            <Btn full onClick={async()=>{setSiLoading(true);const r=await SessionManager.setNewPin(forgotEmail,forgotCode,forgotNewPin);setSiLoading(false);if(r?.success){setSiEmail(forgotEmail);setSiPin(forgotNewPin);setSiStep("email");setSiError("");}else setSiError(r?.error||"Reset failed");}}>
               {siLoading?"Resetting...":"Reset PIN"}
             </Btn>
           </>
@@ -2076,15 +2141,8 @@ function Onboarding({d}){
   );
 }
 
-// ─── Debounced cloud sync (2s delay to batch rapid changes) ───
-const debouncedSync=debounce((s)=>{
-  const email=s.profile?.email||LS.get("ft-session-email");
-  const deviceId=LS.get("ft-device-id");
-  if(email&&deviceId){
-    const syncData={nutrition:s.nutrition,body:s.body,goals:s.goals,units:s.units,profile:s.profile};
-    CloudSync.push(email,deviceId,syncData).catch(()=>{});
-  }
-},2000);
+// ─── Debounced cloud sync (canonical) ───
+const debouncedSync=(s)=>CloudSync.debouncedPush(s);
 
 // ─── Error Boundary ───
 class ErrorBoundary extends React.Component{
