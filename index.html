@@ -172,7 +172,6 @@ const SessionManager={
   revoke:async()=>{
     const token=LS.get("ft-session-token");
     if(token){try{await fetch(`${SYNC_URL}/api/auth/session`,{method:"POST",headers:{"Content-Type":"application/json","X-Session-Token":token},body:JSON.stringify({action:"revoke",token})});}catch(e){}}
-    SentryUtil.breadcrumb("User signed out","auth");SentryUtil.reset();
     LS.set("ft-session-token",null);LS.set("ft-session-email",null);LS.set("ft-session-expires",null);LS.set("ft-is-admin",null);
     Cookie.clear("ironlog_session"); // Clear SSO cookie
   },
@@ -480,7 +479,7 @@ function getDailyMissions(s){
   const mealCount=meals.reduce((a,m)=>a+(m.items||[]).length,0);
   const goals=s.goals||{};
   const waterKey="nl-water-"+td;
-  const water=(() => {try{return parseInt(localStorage.getItem(waterKey)||"0");}catch(e){return 0;}})();
+  const water=LS.get(waterKey)||0;
   const bodyToday=(s.body||[]).some(b=>b.date===td&&b.weight);
   const breakfastMeal=meals.find(m=>m.name==="Breakfast");
   return[
@@ -1997,18 +1996,20 @@ function Onboarding({d}){
 
   const signIn=async()=>{
     setSiError("");setSiLoading(true);
-    const deviceId=LS.get("ft-device-id")||uid();LS.set("ft-device-id",deviceId);
-    const sess=await SessionManager.create(siEmail,siPin,deviceId);
-    if(!sess.success){setSiError(sess.error||"Invalid email or PIN");setSiLoading(false);return;}
-    const pull=await CloudSync.pull(siEmail,deviceId,null);
-    if(pull?.success&&pull?.data){
-      const data=pull.data;
-      LS.set("ft-onb",true);LS.set("nl-onb",true);
-      d({type:"ONBOARD",data:{nutrition:data.nutrition||[],body:data.body||[],goals:data.goals||init.goals,units:data.units||"lbs",profile:data.profile||init.profile,onboarded:true}});
-    }else{
-      LS.set("ft-onb",true);LS.set("nl-onb",true);
-      d({type:"ONBOARD",data:{nutrition:[],body:[],goals:init.goals,units:"lbs",profile:{email:siEmail.toLowerCase()},onboarded:true}});
-    }
+    try{
+      const deviceId=LS.get("ft-device-id")||uid();LS.set("ft-device-id",deviceId);
+      const sess=await SessionManager.create(siEmail,siPin,deviceId);
+      if(!sess.success){setSiError(sess.error||"Invalid email or PIN");setSiLoading(false);return;}
+      const pull=await CloudSync.pull(siEmail,deviceId,null);
+      if(pull?.success&&pull?.data){
+        const data=pull.data;
+        LS.set("ft-onb",true);LS.set("nl-onb",true);
+        d({type:"ONBOARD",data:{nutrition:data.nutrition||[],body:data.body||[],goals:data.goals||init.goals,units:data.units||"lbs",profile:data.profile||init.profile,onboarded:true}});
+      }else{
+        LS.set("ft-onb",true);LS.set("nl-onb",true);
+        d({type:"ONBOARD",data:{nutrition:[],body:[],goals:init.goals,units:"lbs",profile:{email:siEmail.toLowerCase()},onboarded:true}});
+      }
+    }catch(e){setSiError("Connection failed. Check your network.");setSiLoading(false);}
   };
 
   if(showSignIn)return(
