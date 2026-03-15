@@ -2,7 +2,7 @@
   "name": "NutritionLog",
   "short_name": "NutritionLog",
   "description": "Smart macro & calorie tracker. Log meals, track body composition, hit your goals. Part of the IRONLOG ecosystem.",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#060a0e",
@@ -27,10 +27,10 @@
     "lifestyle",
     "productivity"
   ],
-  "scope": "/",
+  "scope": "./",
   "lang": "en-US",
   "dir": "ltr",
-  "id": "/",
+  "id": "./",
   "prefer_related_applications": false,
   "shortcuts": [
     {

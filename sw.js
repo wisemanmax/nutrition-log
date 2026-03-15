@@ -1,9 +1,9 @@
-const CACHE_NAME = 'nutritionlog-v1';
+const CACHE_NAME = 'nutritionlog-v2';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon.svg',
+  './',
+  './index.html',
+  './manifest.json',
+  './icon.svg',
 ];
 const CDN_ASSETS = [
   'https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js',
@@ -93,7 +93,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return res;
-      }).catch(() => cached || caches.match('/index.html'));
+      }).catch(() => cached || caches.match('./index.html'));
       return cached || fetchPromise;
     }).then((response) => response || new Response('Offline', { status: 503, statusText: 'Offline' }))
   );
