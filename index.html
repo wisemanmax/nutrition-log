@@ -42,7 +42,7 @@ button:focus:not(:focus-visible){outline:none}
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(()=>{});
+    navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(()=>{});
   });
 }
 </script>
@@ -930,6 +930,7 @@ function reducer(s,a){
     case "EDIT_N": return{...s,nutrition:s.nutrition.map(n=>n.id===a.n.id?a.n:n)};
     case "DEL_N": return{...s,nutrition:s.nutrition.filter(n=>n.id!==a.id)};
     case "ADD_B": return{...s,body:[a.b,...s.body].sort((a,b)=>b.date.localeCompare(a.date))};
+    case "EDIT_B": return{...s,body:s.body.map(b=>b.id===a.b.id?a.b:b)};
     case "DEL_B": return{...s,body:s.body.filter(b=>b.id!==a.id)};
     case "GOALS": return{...s,goals:{...s.goals,...a.g}};
     case "UNITS": return{...s,units:a.units};
@@ -1374,10 +1375,11 @@ function BodyTab({s,d}){
   const td=today();
 
   const save=()=>{
-    const b={id:uid(),date:form.date,weight:parseFloat(form.weight)||0,bf:parseFloat(form.bf)||0,
+    const existing=s.body.find(e=>e.date===form.date);
+    const b={id:existing?existing.id:uid(),date:form.date,weight:parseFloat(form.weight)||0,bf:parseFloat(form.bf)||0,
       waist:parseFloat(form.waist)||0,hips:parseFloat(form.hips)||0,chest:parseFloat(form.chest)||0,
       neck:parseFloat(form.neck)||0,arms:parseFloat(form.arms)||0,thighs:parseFloat(form.thighs)||0,calves:parseFloat(form.calves)||0};
-    d({type:"ADD_B",b});Haptic.success();Toast.show("Body log saved",V.accent);setShow(false);
+    d({type:existing?"EDIT_B":"ADD_B",b});Haptic.success();Toast.show("Body log saved",V.accent);setShow(false);
   };
 
   const latest=s.body[0],prev=s.body[1];
@@ -1765,7 +1767,7 @@ function SettingsTab({s,d,installPrompt,onInstalled}){
           <Field label="First Name" value={profile.firstName||""} onChange={v=>setProfile(p=>({...p,firstName:v}))}/>
           <Field label="Last Name" value={profile.lastName||""} onChange={v=>setProfile(p=>({...p,lastName:v}))}/>
         </div>
-        <Field label="Height (e.g. 5'10\")" value={profile.height||""} onChange={v=>setProfile(p=>({...p,height:v}))}/>
+        <Field label={"Height (e.g. 5'10\")"} value={profile.height||""} onChange={v=>setProfile(p=>({...p,height:v}))}/>
         <div style={{marginBottom:12}}>
           <div style={{fontSize:11,color:V.text3,textTransform:"uppercase",letterSpacing:".08em",marginBottom:6,fontWeight:600}}>Sex</div>
           <div style={{display:"flex",gap:8}}>
