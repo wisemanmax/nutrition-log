@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nutritionlog-v2';
+const CACHE_NAME = 'nutritionlog-v3';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -8,7 +8,8 @@ const STATIC_ASSETS = [
 const CDN_ASSETS = [
   'https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js',
   'https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js',
-  'https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js',
+  'https://cdn.jsdelivr.net/npm/react-is@18.3.1/umd/react-is.production.min.js',
+  'https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js',
   'https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.0/babel.min.js',
   'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap',
 ];
