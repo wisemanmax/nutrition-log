@@ -1,0 +1,58 @@
+{
+  "name": "NutritionLog",
+  "short_name": "NutritionLog",
+  "description": "Smart macro & calorie tracker. Log meals, track body composition, hit your goals. Part of the IRONLOG ecosystem.",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#060a0e",
+  "theme_color": "#060a0e",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": [
+    "health",
+    "fitness",
+    "lifestyle",
+    "productivity"
+  ],
+  "scope": "./",
+  "lang": "en-US",
+  "dir": "ltr",
+  "id": "./",
+  "prefer_related_applications": false,
+  "shortcuts": [
+    {
+      "name": "Log Nutrition",
+      "short_name": "Log",
+      "description": "Log today's meals and macros",
+      "url": "/?tab=log",
+      "icons": [{"src": "./icon.svg", "sizes": "any", "type": "image/svg+xml"}]
+    },
+    {
+      "name": "Body Metrics",
+      "short_name": "Body",
+      "description": "Log weight and body composition",
+      "url": "/?tab=body",
+      "icons": [{"src": "./icon.svg", "sizes": "any", "type": "image/svg+xml"}]
+    },
+    {
+      "name": "View Trends",
+      "short_name": "Trends",
+      "description": "View nutrition and weight trends",
+      "url": "/?tab=trends",
+      "icons": [{"src": "./icon.svg", "sizes": "any", "type": "image/svg+xml"}]
+    }
+  ]
+}

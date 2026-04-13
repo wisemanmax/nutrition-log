@@ -1,0 +1,2346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="NutritionLog"/>
+<meta name="theme-color" content="#060a0e"/>
+<meta name="description" content="NutritionLog — Smart macro & calorie tracker. Log meals, track body composition, hit your goals."/>
+<meta name="color-scheme" content="dark light"/>
+<title>NutritionLog by IRONLOG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body,#root{height:100%;width:100%;margin:0;padding:0;overflow:hidden;position:fixed;top:0;left:0;right:0;bottom:0;background:#060a0e}
+@supports(-webkit-touch-callout:none){html,body,#root{height:-webkit-fill-available}}
+body{font-family:'Outfit',sans-serif;color:#e2e8f0;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch}
+input,button,select{font-family:'Outfit',sans-serif}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=date]::-webkit-calendar-picker-indicator{filter:invert(0.7) sepia(1) saturate(3) hue-rotate(100deg)}
+::-webkit-scrollbar{display:none}
+.sheet-head{padding-top:max(16px,env(safe-area-inset-top,0px));padding-bottom:12px;flex-shrink:0}
+.sheet-footer{padding-bottom:max(20px,env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-top:12px}
+.tab-bar{padding-bottom:max(12px,env(safe-area-inset-bottom,0px))}
+.main-scroll{padding-bottom:max(100px,calc(80px + env(safe-area-inset-bottom,0px)));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+@keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+.fade-up{animation:fadeUp .35s ease both}
+*:focus-visible{outline:2px solid #4ade80;outline-offset:2px;border-radius:4px}
+button:focus:not(:focus-visible){outline:none}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+@media(orientation:landscape) and (max-height:500px){#root{display:none!important}#landscape-lock{display:flex!important}}
+#landscape-lock{display:none;position:fixed;inset:0;background:#08080d;z-index:99999;flex-direction:column;align-items:center;justify-content:center;gap:12px;font-family:'Outfit',sans-serif;color:#94a3b8;font-size:14px;text-align:center;padding:20px}
+</style>
+<link rel="manifest" href="./manifest.json"/>
+<link rel="apple-touch-icon" href="./icon.svg"/>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(()=>{});
+  });
+}
+</script>
+</head>
+<body>
+<div id="landscape-lock"><div style="font-size:32px">🔄</div><div>Please rotate your device to portrait mode</div></div>
+<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px;color:#4ade80">
+  <div style="font-size:32px">🥗</div>
+  <div style="font-family:'JetBrains Mono',monospace;font-size:13px;opacity:.5">Loading...</div>
+</div></div>
+
+<script>
+var loadStatus={};
+function loadScript(url,name){
+  return new Promise(function(resolve,reject){
+    var s=document.createElement('script');s.src=url;s.crossOrigin='anonymous';
+    s.onload=function(){
+      if(typeof window[name]==='undefined'){loadStatus[name]='FAILED';reject(new Error(name+' loaded but not defined from '+url));return;}
+      loadStatus[name]='ok';resolve();
+    };
+    s.onerror=function(){loadStatus[name]='FAILED';reject(new Error(name+' failed from '+url));};
+    document.head.appendChild(s);
+  });
+}
+function showError(msg){
+  document.getElementById('root').innerHTML='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;padding:24px;text-align:center;gap:12px;background:#060a0e"><div style="font-size:28px">🚫</div><div style="color:#f87171;font-family:monospace;font-size:13px;line-height:1.6;max-width:320px">'+msg+'</div><div style="color:#64748b;font-size:11px">Check your internet connection and reload</div></div>';
+}
+(function(){
+  loadScript('https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js','React')
+  .catch(function(){return loadScript('https://unpkg.com/react@18/umd/react.production.min.js','React');})
+  .then(function(){
+    return loadScript('https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js','ReactDOM')
+    .catch(function(){return loadScript('https://unpkg.com/react-dom@18/umd/react-dom.production.min.js','ReactDOM');});
+  })
+  .then(function(){
+    return loadScript('https://cdn.jsdelivr.net/npm/react-is@18.3.1/umd/react-is.production.min.js','ReactIs')
+    .catch(function(){return loadScript('https://unpkg.com/react-is@18/umd/react-is.production.min.js','ReactIs');});
+  })
+  .then(function(){
+    return loadScript('https://cdn.jsdelivr.net/npm/prop-types@15.8.1/prop-types.min.js','PropTypes')
+    .catch(function(){return loadScript('https://unpkg.com/prop-types@15.8.1/prop-types.min.js','PropTypes');});
+  })
+  .then(function(){
+    return loadScript('https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js','Recharts')
+    .catch(function(){return loadScript('https://unpkg.com/recharts@2.5.0/umd/Recharts.min.js','Recharts');});
+  })
+  .then(function(){
+    return loadScript('https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.0/babel.min.js','Babel')
+    .catch(function(){return loadScript('https://unpkg.com/@babel/standalone@7.24.0/babel.min.js','Babel');});
+  })
+  .then(function(){
+    if(typeof React==='undefined')throw new Error('React not available');
+    if(typeof Babel==='undefined')throw new Error('Babel not available');
+    var src=document.getElementById('app-source');
+    if(!src)throw new Error('App source not found');
+    var compiled;
+    try{compiled=Babel.transform(src.textContent,{presets:[['react',{runtime:'classic'}]],filename:'app.jsx'}).code;}
+    catch(e){throw new Error('Compile error: '+e.message.slice(0,120));}
+    try{new Function(compiled)();}
+    catch(e){throw new Error('Runtime error: '+e.message.slice(0,120));}
+  })
+  .catch(function(e){showError(e.message);});
+})();
+</script>
+
+<script type="text/plain" id="app-source">
+const{useState,useEffect,useReducer,useCallback,useMemo,useRef,memo}=React;
+const{BarChart,Bar,LineChart,Line,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,ReferenceLine}=Recharts;
+
+// ─── Persistence ───
+const LS={
+  get:(k)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch(e){return null;}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){console.warn("Error:",e);}},
+};
+
+// ─── Cookie (SSO across .ironlog.space) ───
+const Cookie={
+  get:(name)=>{const m=document.cookie.match(new RegExp("(^| )"+name+"=([^;]+)"));return m?decodeURIComponent(m[2]):null;},
+  set:(name,value,days=30)=>{const exp=new Date(Date.now()+days*864e5).toUTCString();document.cookie=`${name}=${encodeURIComponent(value)};expires=${exp};path=/;domain=.ironlog.space;SameSite=Lax`;},
+  clear:(name)=>{document.cookie=`${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.ironlog.space`;},
+};
+
+const SYNC_URL=LS.get("ft-api-url")||"https://api.ironlog.space";
+
+const AuthToken={
+  // Legacy — kept for backward compat during migration
+  init:(email)=>{},
+  generate:(email)=>"",
+  getHeaders:(email)=>{
+    const sessionToken=LS.get("ft-session-token");
+    return{
+      "Content-Type":"application/json",
+      ...(sessionToken?{"X-Session-Token":sessionToken}:{}),
+      "X-Auth-Token":email||"legacy",
+    };
+  },
+};
+
+const SessionManager={
+  // Create session after signup (called with email + PIN)
+  create:async(email,pin,deviceId)=>{
+    try{
+      const res=await fetch(`${SYNC_URL}/api/auth/session`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"create",email:email.toLowerCase(),pin,deviceId:deviceId||LS.get("ft-device-id")})
+      });
+      const json=await res.json();
+      if(json.success&&json.token){
+        LS.set("ft-session-token",json.token);
+        LS.set("ft-session-email",email.toLowerCase());
+        LS.set("ft-session-expires",json.expires_at);
+        Cookie.set("ironlog_session",json.token,30); // SSO across subdomains
+        return{success:true,token:json.token};
+      }
+      return{success:false,error:json.error,attempts_remaining:json.attempts_remaining};
+    }catch(e){return{success:false,error:"Connection failed"};}
+  },
+  // Check if we have a valid session
+  hasSession:()=>{
+    const token=LS.get("ft-session-token");
+    const expires=LS.get("ft-session-expires");
+    if(!token)return false;
+    if(expires&&new Date(expires)<new Date()){LS.set("ft-session-token",null);return false;}
+    return true;
+  },
+  // Revoke (logout)
+  revoke:async()=>{
+    const token=LS.get("ft-session-token");
+    if(token){try{await fetch(`${SYNC_URL}/api/auth/session`,{method:"POST",headers:{"Content-Type":"application/json","X-Session-Token":token},body:JSON.stringify({action:"revoke",token})});}catch(e){}}
+    LS.set("ft-session-token",null);LS.set("ft-session-email",null);LS.set("ft-session-expires",null);LS.set("ft-is-admin",null);
+    Cookie.clear("ironlog_session"); // Clear SSO cookie
+  },
+  // Check admin status (silent — never exposes admin to non-admins)
+  checkAdmin:async()=>{
+    const token=LS.get("ft-session-token");
+    const email=LS.get("ft-session-email")||LS.get("ft-profile")?.email;
+    if(!token&&!email)return false;
+    try{
+      const headers={"Content-Type":"application/json"};
+      if(token)headers["X-Session-Token"]=token;
+      if(email)headers["X-Auth-Token"]=email;
+      const res=await fetch(`${SYNC_URL}/api/admin`,{method:"POST",headers,
+        body:JSON.stringify({action:"check"})});
+      if(res.ok){const json=await res.json();if(json.isAdmin){LS.set("ft-is-admin",true);return true;}}
+      LS.set("ft-is-admin",null);return false;
+    }catch(e){return false;}
+  },
+  // ─── Forgot PIN (satellite apps — canonical /api/auth/session) ───
+  sendResetCode:async(email)=>{
+    try{
+      const res=await fetch(`${SYNC_URL}/api/auth/session`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"send_reset_code",email:email.toLowerCase()})});
+      return res.ok?{success:true}:{success:false,error:"Email not found"};
+    }catch(e){return{success:false,error:"Connection failed"};}
+  },
+  verifyResetCode:async(email,code)=>{
+    try{
+      const res=await fetch(`${SYNC_URL}/api/auth/session`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"verify_reset_code",email:email.toLowerCase(),code})});
+      return res.ok?{success:true}:{success:false,error:"Invalid code"};
+    }catch(e){return{success:false,error:"Connection failed"};}
+  },
+  setNewPin:async(email,code,newPin)=>{
+    try{
+      const res=await fetch(`${SYNC_URL}/api/auth/session`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"set_new_pin",email:email.toLowerCase(),resetToken:code,newPin})});
+      return res.ok?{success:true}:{success:false,error:"Reset failed"};
+    }catch(e){return{success:false,error:"Connection failed"};}
+  },
+};
+
+// ─── Cloud Sync (nutritionlog) ───
+let _syncTimer=null;let _syncInFlight=false;
+const CloudSync={
+  push:async(state)=>{
+    if(_syncInFlight)return;
+    const email=state.profile?.email||LS.get("ft-session-email");
+    if(!email)return;
+    _syncInFlight=true;
+    const payload=JSON.stringify({
+      email,
+      deviceId:LS.get("ft-device-id")||"unknown",
+      appVersion:"nutritionlog-1.0",
+      workouts:[],
+      nutrition:state.nutrition||[],
+      body:state.body||[],
+      photos:[],checkins:[],milestones:[],
+      settings:{goals:state.goals,units:state.units,
+        schedule:null,exercises:null,phases:[],injuries:[],
+        privacy:{},supplements:[],accountability:[],gamification:null},
+    });
+    try{
+      const res=await fetch(`${SYNC_URL}/api/sync/push`,{method:"POST",headers:AuthToken.getHeaders(email),body:payload});
+      if(res.status===401){LS.set("ft-session-token",null);_syncInFlight=false;return;}
+      if(!res.ok)throw new Error("Push failed");
+    }catch(e){console.warn("Sync push error:",e);}
+    _syncInFlight=false;
+  },
+  debouncedPush:(state)=>{
+    if(_syncTimer)clearTimeout(_syncTimer);
+    _syncTimer=setTimeout(()=>CloudSync.push(state),3000);
+  },
+  pull:async(email,deviceId,pin)=>{
+    try{
+      const res=await fetch(`${SYNC_URL}/api/sync/pull`,{
+        method:"POST",
+        headers:AuthToken.getHeaders(email),
+        body:JSON.stringify({email,deviceId,pin:pin||null}),
+      });
+      const json=await res.json();
+      if(res.status===403&&json.pin_required)return{pin_required:true};
+      if(res.status===403)return{wrong_pin:true,attempts_remaining:json.attempts_remaining,locked:json.locked};
+      if(res.status===429)return{locked:true,retry_minutes:json.retry_minutes};
+      if(json.success===false)return{error:json.error||"Account not found"};
+      if(!res.ok)return{error:"Server error"};
+      if(json.success)return json;
+      return null;
+    }catch(e){return{error:"Connection failed"};}
+  },
+};
+
+// ─── Device ID (persistent per device) ───
+if(!LS.get("ft-device-id")){
+  LS.set("ft-device-id","dev_"+Math.random().toString(36).slice(2,10)+Date.now().toString(36));
+}
+
+// ─── Helpers ───
+const uid=()=>Math.random().toString(36).slice(2)+Date.now().toString(36);
+const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};};
+const today=()=>new Date().toISOString().split("T")[0];
+const ago=(n)=>{const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split("T")[0];};
+const fmtFull=(d)=>{try{return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});}catch(e){return d;}};
+const fmtShort=(d)=>{try{const dt=new Date(d+"T12:00:00");return`${dt.getMonth()+1}/${dt.getDate()}`;}catch(e){return d;}};
+const wUnit=(u)=>u==="kg"?"kg":"lbs";
+
+// ─── Food Database ───
+const FOODS=[
+  {n:"Chicken Breast (4oz)",cal:187,p:35,c:0,f:4,cat:"Protein"},{n:"Chicken Thigh (4oz)",cal:232,p:28,c:0,f:13,cat:"Protein"},
+  {n:"Ground Turkey (4oz)",cal:170,p:21,c:0,f:9,cat:"Protein"},{n:"Ground Beef 90/10 (4oz)",cal:200,p:22,c:0,f:11,cat:"Protein"},
+  {n:"Ground Beef 80/20 (4oz)",cal:280,p:20,c:0,f:23,cat:"Protein"},{n:"Steak Sirloin (6oz)",cal:276,p:46,c:0,f:9,cat:"Protein"},
+  {n:"Steak Ribeye (6oz)",cal:390,p:39,c:0,f:25,cat:"Protein"},{n:"Salmon Fillet (4oz)",cal:233,p:25,c:0,f:14,cat:"Protein"},
+  {n:"Tuna Canned (1 can)",cal:120,p:27,c:0,f:1,cat:"Protein"},{n:"Shrimp (4oz)",cal:120,p:23,c:1,f:2,cat:"Protein"},
+  {n:"Tilapia (4oz)",cal:110,p:23,c:0,f:2,cat:"Protein"},{n:"Cod (4oz)",cal:93,p:20,c:0,f:1,cat:"Protein"},
+  {n:"Pork Chop (4oz)",cal:187,p:30,c:0,f:7,cat:"Protein"},{n:"Pork Tenderloin (4oz)",cal:136,p:23,c:0,f:4,cat:"Protein"},
+  {n:"Bacon (3 slices)",cal:129,p:9,c:0,f:10,cat:"Protein"},{n:"Turkey Bacon (3 slices)",cal:90,p:10,c:0,f:5,cat:"Protein"},
+  {n:"Egg (1 large)",cal:72,p:6,c:0,f:5,cat:"Protein"},{n:"Egg Whites (3 large)",cal:51,p:11,c:0,f:0,cat:"Protein"},
+  {n:"Tofu Firm (4oz)",cal:88,p:10,c:2,f:5,cat:"Protein"},{n:"Tempeh (4oz)",cal:222,p:21,c:8,f:13,cat:"Protein"},
+  {n:"Turkey Breast Deli (3oz)",cal:90,p:18,c:1,f:1,cat:"Protein"},{n:"Ham Deli (3oz)",cal:90,p:14,c:2,f:3,cat:"Protein"},
+  {n:"Beef Jerky (1oz)",cal:116,p:9,c:3,f:7,cat:"Protein"},{n:"Bison (4oz)",cal:166,p:24,c:0,f:7,cat:"Protein"},
+  {n:"Rotisserie Chicken (4oz)",cal:190,p:28,c:0,f:8,cat:"Protein"},{n:"Canned Chicken (3oz)",cal:90,p:16,c:0,f:3,cat:"Protein"},
+  {n:"Smoked Salmon (3oz)",cal:100,p:16,c:0,f:4,cat:"Protein"},{n:"Ground Chicken (4oz)",cal:150,p:20,c:0,f:8,cat:"Protein"},
+  {n:"Whole Milk (1 cup)",cal:149,p:8,c:12,f:8,cat:"Dairy"},{n:"Greek Yogurt Plain (1 cup)",cal:130,p:22,c:8,f:0,cat:"Dairy"},
+  {n:"Greek Yogurt Honey (1 cup)",cal:190,p:18,c:25,f:3,cat:"Dairy"},{n:"Cottage Cheese (1 cup)",cal:206,p:28,c:8,f:9,cat:"Dairy"},
+  {n:"Cottage Cheese Low-Fat (1 cup)",cal:163,p:28,c:6,f:2,cat:"Dairy"},{n:"Cheddar Cheese (1oz)",cal:113,p:7,c:0,f:9,cat:"Dairy"},
+  {n:"Mozzarella (1oz)",cal:85,p:6,c:1,f:6,cat:"Dairy"},{n:"String Cheese (1 stick)",cal:80,p:7,c:1,f:6,cat:"Dairy"},
+  {n:"Whey Protein Scoop",cal:120,p:24,c:3,f:1,cat:"Dairy"},{n:"Casein Protein Scoop",cal:120,p:24,c:4,f:1,cat:"Dairy"},
+  {n:"Fairlife Milk (1 cup)",cal:120,p:13,c:6,f:5,cat:"Dairy"},{n:"Fairlife Shake (11.5oz)",cal:150,p:30,c:3,f:3,cat:"Dairy"},
+  {n:"Premier Protein Shake",cal:160,p:30,c:5,f:3,cat:"Dairy"},{n:"Oat Milk (1 cup)",cal:120,p:3,c:16,f:5,cat:"Dairy"},
+  {n:"Almond Milk Unsweetened (1 cup)",cal:30,p:1,c:1,f:3,cat:"Dairy"},{n:"Ice Cream Vanilla (1/2 cup)",cal:137,p:2,c:16,f:7,cat:"Dairy"},
+  {n:"White Rice (1 cup cooked)",cal:206,p:4,c:45,f:0,cat:"Grains"},{n:"Brown Rice (1 cup cooked)",cal:216,p:5,c:45,f:2,cat:"Grains"},
+  {n:"Quinoa (1 cup cooked)",cal:222,p:8,c:39,f:4,cat:"Grains"},{n:"Oatmeal (1/2 cup dry)",cal:150,p:5,c:27,f:3,cat:"Grains"},
+  {n:"Oatmeal Instant (1 packet)",cal:130,p:4,c:23,f:3,cat:"Grains"},{n:"Pasta (2oz dry)",cal:200,p:7,c:42,f:1,cat:"Grains"},
+  {n:"Whole Wheat Pasta (2oz dry)",cal:180,p:8,c:39,f:1,cat:"Grains"},{n:"Bread Whole Wheat (1 slice)",cal:81,p:4,c:14,f:1,cat:"Grains"},
+  {n:"Bread White (1 slice)",cal:67,p:2,c:13,f:1,cat:"Grains"},{n:"Bagel (1 medium)",cal:245,p:9,c:48,f:1,cat:"Grains"},
+  {n:"English Muffin",cal:132,p:5,c:26,f:1,cat:"Grains"},{n:"Tortilla Flour (10in)",cal:218,p:6,c:36,f:5,cat:"Grains"},
+  {n:"Tortilla Corn (6in)",cal:52,p:1,c:11,f:1,cat:"Grains"},{n:"Sweet Potato (1 medium)",cal:103,p:2,c:24,f:0,cat:"Grains"},
+  {n:"Potato (1 medium)",cal:161,p:4,c:37,f:0,cat:"Grains"},{n:"Overnight Oats (1 cup prep)",cal:300,p:12,c:45,f:8,cat:"Grains"},
+  {n:"Banana (1 medium)",cal:105,p:1,c:27,f:0,cat:"Fruits"},{n:"Apple (1 medium)",cal:95,p:0,c:25,f:0,cat:"Fruits"},
+  {n:"Orange (1 medium)",cal:62,p:1,c:15,f:0,cat:"Fruits"},{n:"Strawberries (1 cup)",cal:49,p:1,c:12,f:0,cat:"Fruits"},
+  {n:"Blueberries (1 cup)",cal:84,p:1,c:21,f:0,cat:"Fruits"},{n:"Grapes (1 cup)",cal:104,p:1,c:27,f:0,cat:"Fruits"},
+  {n:"Watermelon (1 cup)",cal:46,p:1,c:12,f:0,cat:"Fruits"},{n:"Mango (1 cup)",cal:99,p:1,c:25,f:1,cat:"Fruits"},
+  {n:"Avocado (1/2)",cal:120,p:1,c:6,f:11,cat:"Fruits"},{n:"Raspberries (1 cup)",cal:64,p:1,c:15,f:1,cat:"Fruits"},
+  {n:"Broccoli (1 cup)",cal:55,p:4,c:11,f:1,cat:"Veggies"},{n:"Spinach (2 cups raw)",cal:14,p:2,c:2,f:0,cat:"Veggies"},
+  {n:"Carrots (1 cup)",cal:52,p:1,c:12,f:0,cat:"Veggies"},{n:"Bell Pepper (1 medium)",cal:31,p:1,c:6,f:0,cat:"Veggies"},
+  {n:"Asparagus (6 spears)",cal:20,p:2,c:4,f:0,cat:"Veggies"},{n:"Green Beans (1 cup)",cal:31,p:2,c:7,f:0,cat:"Veggies"},
+  {n:"Zucchini (1 medium)",cal:33,p:2,c:6,f:1,cat:"Veggies"},{n:"Cauliflower (1 cup)",cal:27,p:2,c:5,f:0,cat:"Veggies"},
+  {n:"Kale (2 cups raw)",cal:14,p:1,c:3,f:0,cat:"Veggies"},{n:"Cucumber (1 medium)",cal:16,p:1,c:4,f:0,cat:"Veggies"},
+  {n:"Tomato (1 medium)",cal:22,p:1,c:5,f:0,cat:"Veggies"},{n:"Mushrooms (1 cup)",cal:15,p:2,c:2,f:0,cat:"Veggies"},
+  {n:"Almonds (1oz)",cal:164,p:6,c:6,f:14,cat:"Nuts"},{n:"Peanuts (1oz)",cal:161,p:7,c:5,f:14,cat:"Nuts"},
+  {n:"Cashews (1oz)",cal:157,p:5,c:9,f:12,cat:"Nuts"},{n:"Walnuts (1oz)",cal:185,p:4,c:4,f:18,cat:"Nuts"},
+  {n:"Peanut Butter (2 tbsp)",cal:188,p:8,c:6,f:16,cat:"Nuts"},{n:"Almond Butter (2 tbsp)",cal:196,p:7,c:6,f:18,cat:"Nuts"},
+  {n:"Chia Seeds (2 tbsp)",cal:140,p:5,c:12,f:9,cat:"Nuts"},{n:"Hemp Seeds (3 tbsp)",cal:166,p:10,c:2,f:14,cat:"Nuts"},
+  {n:"Protein Bar (avg)",cal:230,p:20,c:25,f:8,cat:"Snacks"},{n:"Built Bar",cal:130,p:17,c:15,f:4,cat:"Snacks"},
+  {n:"Kind Bar",cal:200,p:6,c:22,f:13,cat:"Snacks"},{n:"Rice Cakes (2)",cal:70,p:2,c:15,f:0,cat:"Snacks"},
+  {n:"Chips (1oz)",cal:152,p:2,c:15,f:10,cat:"Snacks"},{n:"Popcorn (3 cups air)",cal:93,p:3,c:19,f:1,cat:"Snacks"},
+  {n:"Dark Chocolate (1oz)",cal:170,p:2,c:13,f:12,cat:"Snacks"},{n:"Hummus (2 tbsp)",cal:50,p:2,c:4,f:3,cat:"Snacks"},
+  {n:"Pork Rinds (1oz)",cal:160,p:17,c:0,f:9,cat:"Snacks"},{n:"Beef Sticks (1)",cal:80,p:6,c:3,f:5,cat:"Snacks"},
+  {n:"Black Coffee",cal:2,p:0,c:0,f:0,cat:"Drinks"},{n:"Coffee w/ Cream & Sugar",cal:80,p:1,c:10,f:4,cat:"Drinks"},
+  {n:"Latte (16oz)",cal:190,p:10,c:18,f:7,cat:"Drinks"},{n:"Orange Juice (8oz)",cal:112,p:2,c:26,f:0,cat:"Drinks"},
+  {n:"Protein Shake",cal:200,p:30,c:12,f:4,cat:"Drinks"},{n:"Smoothie Fruit (16oz)",cal:260,p:4,c:60,f:2,cat:"Drinks"},
+  {n:"Energy Drink (16oz)",cal:160,p:0,c:42,f:0,cat:"Drinks"},{n:"Gatorade (20oz)",cal:140,p:0,c:36,f:0,cat:"Drinks"},
+  {n:"Celsius (12oz)",cal:10,p:0,c:2,f:0,cat:"Drinks"},{n:"Diet Soda (12oz)",cal:0,p:0,c:0,f:0,cat:"Drinks"},
+  {n:"Chipotle Chicken Bowl",cal:665,p:49,c:41,f:24,cat:"Meals"},{n:"Chipotle Burrito",cal:1010,p:56,c:108,f:37,cat:"Meals"},
+  {n:"Chick-fil-A Sandwich",cal:440,p:28,c:40,f:19,cat:"Meals"},{n:"Chick-fil-A Nuggets (12)",cal:380,p:40,c:14,f:18,cat:"Meals"},
+  {n:"Big Mac",cal:550,p:25,c:45,f:30,cat:"Meals"},{n:"Subway 6\" Turkey",cal:280,p:18,c:40,f:4,cat:"Meals"},
+  {n:"Pizza Slice (cheese)",cal:285,p:12,c:36,f:10,cat:"Meals"},{n:"Grilled Chicken Salad",cal:350,p:35,c:12,f:18,cat:"Meals"},
+  {n:"Spaghetti & Meatballs",cal:520,p:25,c:55,f:21,cat:"Meals"},{n:"Stir Fry Chicken & Rice",cal:480,p:32,c:52,f:14,cat:"Meals"},
+  {n:"Poke Bowl Salmon",cal:520,p:35,c:48,f:18,cat:"Meals"},{n:"Caesar Salad w/ Chicken",cal:390,p:32,c:14,f:24,cat:"Meals"},
+  {n:"Burrito Bowl Homemade",cal:520,p:38,c:48,f:18,cat:"Meals"},{n:"Turkey Sandwich",cal:350,p:24,c:36,f:12,cat:"Meals"},
+  {n:"Cava Bowl",cal:540,p:40,c:45,f:28,cat:"Meals"},{n:"Chicken Alfredo",cal:620,p:35,c:52,f:28,cat:"Meals"},
+  {n:"Olive Oil (1 tbsp)",cal:119,p:0,c:0,f:14,cat:"Sauces"},{n:"Mayo (1 tbsp)",cal:94,p:0,c:0,f:10,cat:"Sauces"},
+  {n:"Ranch (2 tbsp)",cal:129,p:0,c:2,f:13,cat:"Sauces"},{n:"BBQ Sauce (2 tbsp)",cal:70,p:0,c:17,f:0,cat:"Sauces"},
+  {n:"Honey (1 tbsp)",cal:64,p:0,c:17,f:0,cat:"Sauces"},{n:"Sriracha (1 tsp)",cal:5,p:0,c:1,f:0,cat:"Sauces"},
+  {n:"Guacamole (2 tbsp)",cal:50,p:1,c:3,f:4,cat:"Sauces"},{n:"Pesto (2 tbsp)",cal:160,p:3,c:2,f:15,cat:"Sauces"},
+  {n:"Black Beans (1/2 cup)",cal:114,p:8,c:20,f:0,cat:"Legumes"},{n:"Chickpeas (1/2 cup)",cal:134,p:7,c:22,f:2,cat:"Legumes"},
+  {n:"Lentils (1/2 cup)",cal:115,p:9,c:20,f:0,cat:"Legumes"},{n:"Edamame (1/2 cup)",cal:95,p:9,c:7,f:4,cat:"Legumes"},
+  {n:"Kidney Beans (1/2 cup)",cal:110,p:8,c:20,f:0,cat:"Legumes"},{n:"Pinto Beans (1/2 cup)",cal:122,p:8,c:22,f:1,cat:"Legumes"},
+];
+const FOOD_CATS=["All",...new Set(FOODS.map(f=>f.cat))];
+
+// ─── Fast Food Hacks ───
+const FF_HACKS=[
+  {r:"Chick-fil-A",cal:495,p:50,d:"12ct Grilled Nugget Meal, sub SMALL Mac & Cheese for fries. 1 Zesty Buffalo, 2 Texas Pete. Dip nuggets into mac & cheese."},
+  {r:"Chick-fil-A",cal:325,p:42,d:"BBQ Chicken Salad: 12ct Grilled Nuggets, sub side salad for fries, 1 BBQ Sauce, 2 Texas Pete. Shake into salad!"},
+  {r:"Chipotle",cal:545,p:70,d:"Bowl: EXTRA chicken, no rice, no beans, EXTRA fajita veggies, light cheese. Side red salsa + sour cream crema."},
+  {r:"Chipotle",cal:540,p:54,d:"Bowl: Steak x2, no rice, light black beans, fresh tomato salsa, fajita veggies, light cheese, EXTRA romaine."},
+  {r:"Popeyes",cal:500,p:50,d:"5pc Blackened Tender Combo: Mac & cheese, no biscuit. Louisiana hot sauce + pickles. Dip tenders in mac & cheese!"},
+  {r:"Subway",cal:510,p:42,d:"Oven Roasted Turkey & Ham Wrap: DOUBLE turkey, all the veggies, jalapeños, banana peppers, sweet onion teriyaki."},
+  {r:"Jersey Mike's",cal:400,p:49,d:"#8 Club Sub in a Bowl: Extra meat, NO mayo, NO olive oil blend. Full toppings + provolone, bacon, jalapeño."},
+  {r:"Wendy's",cal:510,p:45,d:"Parmesan Chicken Caesar Salad: EXTRA Chicken, 1/2 Caesar dressing packet."},
+  {r:"Taco Bell",cal:530,p:43,d:"Chicken Enchilada Burrito: Double Chicken, NO sour cream, NO cheese blend. Side cheese sauce (use 1/2), ALL fire sauce."},
+  {r:"Panda Express",cal:535,p:39,d:"Bowl: Teriyaki Chicken, half white rice, half super greens. Chili sauce + soy sauce."},
+  {r:"Shake Shack",cal:456,p:38,d:"Double hamburger lettuce wrapped with tomatoes, onions, pickles. 1 side Shack Sauce."},
+  {r:"Panera",cal:520,p:34,d:"Whole Mediterranean Veggie Sandwich: No feta, no hummus. ADD Black Forest Ham. Side Green Goddess Dressing."},
+  {r:"Raising Cane's",cal:530,p:57,d:"4pc Box Combo NAKED tenders, no fries, extra coleslaw. Split toast as sandwich bread."},
+  {r:"McDonald's",cal:385,p:26,d:"Breakfast Taco: McChicken Biscuit NO BISCUIT, add folded egg, American cheese, bacon. Use Mission Carb Balance tortilla!"},
+  {r:"Zaxby's",cal:530,p:40,d:"4 Finger Plate: Sub extra coleslaw for fries, no toast. Tongue Torch sauce, pickles. Dip tenders -> sauce -> coleslaw."},
+];
+
+// ─── Macro Presets ───
+const MACRO_PRESETS={
+  "High Protein":{icon:"💪",cal:2200,protein:220,carbs:180,fat:55,desc:"2g/lb protein, moderate carbs"},
+  "Balanced":{icon:"⚖️",cal:2200,protein:165,carbs:248,fat:73,desc:"30/45/25 P/C/F split"},
+  "Keto":{icon:"🥑",cal:2000,protein:150,carbs:25,fat:155,desc:"<25g net carbs, high fat"},
+  "Cut":{icon:"🔥",cal:1800,protein:200,carbs:150,fat:50,desc:"500 cal deficit, high protein"},
+  "Bulk":{icon:"📈",cal:2800,protein:210,carbs:330,fat:78,desc:"250 cal surplus, lean bulk"},
+};
+
+// ─── Theme ───
+const DARK={
+  bg:"#060a0e",card:"rgba(255,255,255,0.03)",cardBorder:"rgba(255,255,255,0.07)",
+  accent:"#4ade80",accent2:"#22d3ee",warn:"#fb923c",danger:"#f43f5e",purple:"#a78bfa",
+  text:"#e2e8f0",text2:"#94a3b8",text3:"#475569",
+  font:"'Outfit',sans-serif",mono:"'JetBrains Mono',monospace",
+  sheetBg:"linear-gradient(180deg,#0f172a,#060a0e)",navBg:"rgba(6,10,14,0.96)",mode:"dark"
+};
+const LIGHT={
+  bg:"#f8fafc",card:"rgba(0,0,0,0.03)",cardBorder:"rgba(0,0,0,0.08)",
+  accent:"#16a34a",accent2:"#0891b2",warn:"#ea580c",danger:"#dc2626",purple:"#7c3aed",
+  text:"#0f172a",text2:"#475569",text3:"#94a3b8",
+  font:"'Outfit',sans-serif",mono:"'JetBrains Mono',monospace",
+  sheetBg:"linear-gradient(180deg,#ffffff,#f1f5f9)",navBg:"rgba(248,250,252,0.96)",mode:"light"
+};
+const V={...(LS.get("nl-theme")==="light"?LIGHT:DARK)};
+const setTheme=(m)=>{const t=m==="light"?LIGHT:DARK;Object.assign(V,t);LS.set("nl-theme",m);document.body.style.background=V.bg;document.body.style.color=V.text;};
+
+const Haptic={
+  light:()=>{try{navigator.vibrate?.(10);}catch(e){}},
+  medium:()=>{try{navigator.vibrate?.(25);}catch(e){}},
+  success:()=>{try{navigator.vibrate?.([10,30,10,30,50]);}catch(e){}},
+};
+
+// ─── IRON_RANKS — shared IRONLOG ecosystem ───
+const IRON_RANKS=[
+  {level:1,tier:"Bronze",name:"Bronze I",icon:"🥉",xpNeeded:0,color:"#cd7f32",tierColor:"#cd7f32"},
+  {level:2,tier:"Bronze",name:"Bronze II",icon:"🥉",xpNeeded:200,color:"#c87533",tierColor:"#cd7f32"},
+  {level:3,tier:"Bronze",name:"Bronze III",icon:"🥉",xpNeeded:500,color:"#b87333",tierColor:"#cd7f32"},
+  {level:4,tier:"Silver",name:"Silver I",icon:"🥈",xpNeeded:1000,color:"#94a3b8",tierColor:"#c0c0c0"},
+  {level:5,tier:"Silver",name:"Silver II",icon:"🥈",xpNeeded:1800,color:"#c0c0c0",tierColor:"#c0c0c0"},
+  {level:6,tier:"Silver",name:"Silver III",icon:"🥈",xpNeeded:2800,color:"#e2e8f0",tierColor:"#c0c0c0"},
+  {level:7,tier:"Gold",name:"Gold I",icon:"🥇",xpNeeded:4000,color:"#fbbf24",tierColor:"#f59e0b"},
+  {level:8,tier:"Gold",name:"Gold II",icon:"🥇",xpNeeded:5500,color:"#f59e0b",tierColor:"#f59e0b"},
+  {level:9,tier:"Gold",name:"Gold III",icon:"🥇",xpNeeded:7500,color:"#d97706",tierColor:"#f59e0b"},
+  {level:10,tier:"Platinum",name:"Platinum I",icon:"💠",xpNeeded:10000,color:"#67e8f9",tierColor:"#22d3ee"},
+  {level:11,tier:"Platinum",name:"Platinum II",icon:"💠",xpNeeded:13000,color:"#22d3ee",tierColor:"#22d3ee"},
+  {level:12,tier:"Platinum",name:"Platinum III",icon:"💠",xpNeeded:17000,color:"#06b6d4",tierColor:"#22d3ee"},
+  {level:13,tier:"Diamond",name:"Diamond I",icon:"💎",xpNeeded:22000,color:"#a5b4fc",tierColor:"#6366f1"},
+  {level:14,tier:"Diamond",name:"Diamond II",icon:"💎",xpNeeded:28000,color:"#6366f1",tierColor:"#6366f1"},
+  {level:15,tier:"Diamond",name:"Diamond III",icon:"💎",xpNeeded:35000,color:"#4f46e5",tierColor:"#6366f1"},
+  {level:16,tier:"Master",name:"Master I",icon:"⚔️",xpNeeded:43000,color:"#f87171",tierColor:"#f43f5e"},
+  {level:17,tier:"Master",name:"Master II",icon:"⚔️",xpNeeded:52000,color:"#f43f5e",tierColor:"#f43f5e"},
+  {level:18,tier:"Master",name:"Master III",icon:"⚔️",xpNeeded:63000,color:"#e11d48",tierColor:"#f43f5e"},
+  {level:19,tier:"Grandmaster",name:"Grandmaster I",icon:"👑",xpNeeded:76000,color:"#f9a8d4",tierColor:"#ec4899"},
+  {level:20,tier:"Grandmaster",name:"Grandmaster II",icon:"👑",xpNeeded:91000,color:"#ec4899",tierColor:"#ec4899"},
+  {level:21,tier:"Grandmaster",name:"Grandmaster III",icon:"👑",xpNeeded:108000,color:"#db2777",tierColor:"#ec4899"},
+  {level:22,tier:"Champion",name:"Champion I",icon:"🏆",xpNeeded:128000,color:"#fb923c",tierColor:"#f97316"},
+  {level:23,tier:"Champion",name:"Champion II",icon:"🏆",xpNeeded:150000,color:"#f97316",tierColor:"#f97316"},
+  {level:24,tier:"Champion",name:"Champion III",icon:"🏆",xpNeeded:175000,color:"#ea580c",tierColor:"#f97316"},
+  {level:25,tier:"Iron Legend",name:"Iron Legend I",icon:"⚜️",xpNeeded:205000,color:"#34d399",tierColor:"#10b981"},
+  {level:26,tier:"Iron Legend",name:"Iron Legend II",icon:"⚜️",xpNeeded:240000,color:"#10b981",tierColor:"#10b981"},
+  {level:27,tier:"Iron Legend",name:"Iron Legend III",icon:"⚜️",xpNeeded:280000,color:"#059669",tierColor:"#10b981"},
+  {level:28,tier:"Immortal",name:"Immortal I",icon:"🔱",xpNeeded:325000,color:"#c4b5fd",tierColor:"#8b5cf6"},
+  {level:29,tier:"Immortal",name:"Immortal II",icon:"🔱",xpNeeded:380000,color:"#8b5cf6",tierColor:"#8b5cf6"},
+  {level:30,tier:"Immortal",name:"Immortal III",icon:"🔱",xpNeeded:440000,color:"#7c3aed",tierColor:"#8b5cf6"},
+];
+
+// ─── NutritionLog XP Calculation ───
+function calcScore(s){
+  let xp=0;
+  const entries=s.nutrition||[];
+  // Each meal item logged: 5 XP (meals is [{name, items}, ...])
+  let mealCount=0;entries.forEach(e=>{const meals=Array.isArray(e.meals)?e.meals:[];meals.forEach(m=>{mealCount+=(m.items||[]).length;});});
+  xp+=mealCount*5;
+  // Each logged day: +10 XP
+  const days=new Set(entries.map(e=>e.date));xp+=days.size*10;
+  // Hit protein goal days: +15 XP each
+  const goals=s.goals||{};const proteinGoal=goals.protein||0;
+  entries.forEach(e=>{const tot=e.protein||0;if(proteinGoal>0&&tot>=proteinGoal*0.9)xp+=15;});
+  // Hit calorie goal days: +20 XP each
+  const calGoal=goals.cal||0;
+  entries.forEach(e=>{const tot=e.cal||0;if(calGoal>0&&tot>=calGoal*0.85&&tot<=calGoal*1.15)xp+=20;});
+  // Body weight logs: +10 XP each
+  xp+=(s.body||[]).filter(b=>b.weight).length*10;
+  // Streak milestones
+  const nutDays=([...days]).sort();let streak2=0;let d2=new Date();
+  for(let i=0;i<90;i++){const ds=new Date(d2);ds.setDate(d2.getDate()-i);const key=ds.toISOString().split("T")[0];if(days.has(key))streak2++;else break;}
+  if(streak2>=7)xp+=100;if(streak2>=14)xp+=200;if(streak2>=30)xp+=500;
+  const rank=[...IRON_RANKS].reverse().find(r=>xp>=r.xpNeeded)||IRON_RANKS[0];
+  const nextRank=IRON_RANKS.find(r=>r.level===rank.level+1);
+  const xpIntoRank=xp-rank.xpNeeded;
+  const xpForNext=nextRank?(nextRank.xpNeeded-rank.xpNeeded):null;
+  const pct=xpForNext?Math.min(100,Math.round(xpIntoRank/xpForNext*100)):100;
+  return{xp,rank,nextRank,xpIntoRank,xpForNext,pct,streak:streak2};
+}
+
+// ─── NutritionLog Daily Missions ───
+function getDailyMissions(s){
+  const td=today();
+  const todayEntry=(s.nutrition||[]).find(e=>e.date===td)||{meals:[],totals:{}};
+  const meals=Array.isArray(todayEntry.meals)?todayEntry.meals:[];
+  const mealCount=meals.reduce((a,m)=>a+(m.items||[]).length,0);
+  const goals=s.goals||{};
+  const waterKey="nl-water-"+td;
+  const water=LS.get(waterKey)||0;
+  const bodyToday=(s.body||[]).some(b=>b.date===td&&b.weight);
+  const breakfastMeal=meals.find(m=>m.name==="Breakfast");
+  return[
+    {icon:"🍳",title:"Log Breakfast",desc:"Add at least one breakfast item",xp:20,done:(breakfastMeal?.items||[]).length>0},
+    {icon:"🥗",title:"Log 3 Meals",desc:"Log breakfast, lunch, and dinner",xp:30,done:mealCount>=3},
+    {icon:"💪",title:"Hit Protein Goal",desc:"Reach 90%+ of your protein target",xp:35,done:goals.protein>0&&(todayEntry.protein||0)>=(goals.protein*0.9)},
+    {icon:"🎯",title:"Hit Calorie Goal",desc:"Stay within 15% of calorie target",xp:25,done:goals.cal>0&&(todayEntry.cal||0)>=(goals.cal*0.85)&&(todayEntry.cal||0)<=(goals.cal*1.15)},
+    {icon:"💧",title:"8 Cups of Water",desc:"Log your full daily water intake",xp:20,done:water>=8},
+    {icon:"⚖️",title:"Weigh In",desc:"Log today's body weight",xp:15,done:bodyToday},
+  ];
+}
+
+// ─── Level-Up Detection Hook ───
+function useLevelUp(score,lsKey){
+  const {rank}=score;
+  const [celebrating,setCelebrating]=useState(false);
+  const [celebRank,setCelebRank]=useState(null);
+  useEffect(()=>{
+    const saved=parseInt(LS.get(lsKey)||"1");
+    if(rank.level>saved){
+      LS.set(lsKey,rank.level);
+      setCelebRank(rank);
+      setTimeout(()=>setCelebrating(true),400);
+    } else if(!LS.get(lsKey)){LS.set(lsKey,rank.level);}
+  },[rank.level]);
+  return{celebrating,celebRank,dismiss:()=>setCelebrating(false)};
+}
+
+// ─── IronScoreCard ───
+function IronScoreCard({score,compact}){
+  const {xp,rank,nextRank,xpIntoRank,xpForNext,pct}=score;
+  if(compact){
+    return(
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{width:34,height:34,borderRadius:10,background:`linear-gradient(135deg,${rank.color}30,${rank.tierColor}15)`,border:`2px solid ${rank.color}60`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>
+          {rank.icon}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:11,fontWeight:800,color:rank.color,lineHeight:1}}>{rank.name}</div>
+          <div style={{fontSize:9,color:V.text3,fontFamily:V.mono}}>{xp.toLocaleString()} XP</div>
+        </div>
+      </div>
+    );
+  }
+  return(
+    <div style={{background:`linear-gradient(135deg,${rank.color}12,${rank.tierColor}06)`,border:`1.5px solid ${rank.color}40`,borderRadius:16,padding:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:52,height:52,borderRadius:14,background:`linear-gradient(135deg,${rank.color}30,${rank.tierColor}15)`,border:`2.5px solid ${rank.color}70`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0,boxShadow:`0 0 16px ${rank.color}30`}}>
+            {rank.icon}
+          </div>
+          <div>
+            <div style={{fontSize:9,fontWeight:700,letterSpacing:2,color:rank.color,textTransform:"uppercase",opacity:.7}}>{rank.tier}</div>
+            <div style={{fontSize:18,fontWeight:900,color:rank.color,lineHeight:1.1}}>{rank.name}</div>
+            <div style={{fontSize:9,color:V.text3}}>Level {rank.level} of 30</div>
+          </div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:20,fontWeight:900,fontFamily:V.mono,color:rank.color}}>{xp.toLocaleString()}</div>
+          <div style={{fontSize:9,color:V.text3}}>IRON XP</div>
+        </div>
+      </div>
+      {xpForNext&&(
+        <div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+            <span style={{fontSize:9,color:V.text3}}>→ {nextRank?.name}</span>
+            <span style={{fontSize:9,color:rank.color,fontWeight:700,fontFamily:V.mono}}>{xpIntoRank.toLocaleString()} / {xpForNext.toLocaleString()} XP ({pct}%)</span>
+          </div>
+          <div style={{width:"100%",height:6,borderRadius:3,background:"rgba(255,255,255,0.05)"}}>
+            <div style={{height:"100%",borderRadius:3,width:pct+"%",background:`linear-gradient(90deg,${rank.color},${rank.tierColor})`,transition:"width .5s"}}/>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── MissionsPanel ───
+function MissionsPanel({missions,onClose}){
+  const [show,setShow]=useState(false);
+  const done=missions.filter(m=>m.done).length;
+  const totalXp=missions.filter(m=>m.done).reduce((a,m)=>a+m.xp,0);
+  return(
+    <>
+      <div onClick={()=>setShow(true)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:12,background:done===missions.length?"rgba(52,211,153,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${done===missions.length?"rgba(52,211,153,0.25)":V.cardBorder}`,cursor:"pointer"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:18}}>⚡</span>
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:V.text}}>Daily Missions</div>
+            <div style={{fontSize:10,color:V.text3}}>{done}/{missions.length} complete · {totalXp} XP earned</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:3}}>
+          {missions.slice(0,5).map((m,i)=>(
+            <div key={i} style={{width:6,height:6,borderRadius:3,background:m.done?"#34d399":"rgba(255,255,255,0.12)"}}/>
+          ))}
+        </div>
+      </div>
+      {show&&ReactDOM.createPortal(
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9990,background:"linear-gradient(180deg,#0a0a1a,#050508)",display:"flex",flexDirection:"column"}}>
+          <div className="sheet-head" style={{flexShrink:0,display:"flex",alignItems:"center",gap:12,paddingLeft:16,paddingRight:16,borderBottom:`1px solid ${V.cardBorder}`,background:"rgba(8,8,13,0.98)"}}>
+            <button onClick={()=>setShow(false)} style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",padding:"8px 4px",WebkitTapHighlightColor:"transparent",flexShrink:0}}>
+              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={V.accent} strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+              <span style={{fontSize:14,color:V.accent,fontWeight:600}}>Back</span>
+            </button>
+            <h3 style={{margin:0,fontSize:16,color:V.text,fontFamily:V.font,fontWeight:700,flex:1,textAlign:"center",paddingRight:50}}>Daily Missions</h3>
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:20}}>
+            <div style={{textAlign:"center",marginBottom:16}}>
+              <div style={{fontSize:11,color:V.text3,marginBottom:4}}>TODAY'S PROGRESS</div>
+              <div style={{fontSize:28,fontWeight:900,color:done===missions.length?"#34d399":V.accent,fontFamily:V.mono}}>{done}<span style={{fontSize:14,color:V.text3}}>/{missions.length}</span></div>
+              {done===missions.length&&<div style={{fontSize:12,color:"#34d399",fontWeight:700,marginTop:4}}>🎉 All missions complete!</div>}
+            </div>
+            <div style={{width:"100%",height:6,borderRadius:3,background:"rgba(255,255,255,0.05)",marginBottom:20}}>
+              <div style={{height:"100%",borderRadius:3,width:(done/missions.length*100)+"%",background:"linear-gradient(90deg,#34d399,#22d3ee)",transition:"width .4s"}}/>
+            </div>
+            {missions.map((m,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:12,background:m.done?"rgba(52,211,153,0.06)":"rgba(255,255,255,0.02)",border:`1px solid ${m.done?"rgba(52,211,153,0.2)":V.cardBorder}`,marginBottom:8,transition:"all .2s"}}>
+                <div style={{width:32,height:32,borderRadius:10,background:m.done?"rgba(52,211,153,0.15)":"rgba(255,255,255,0.05)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>
+                  {m.icon}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:700,color:m.done?V.text:V.text2,textDecoration:m.done?"line-through":"none"}}>{m.title}</div>
+                  <div style={{fontSize:11,color:V.text3}}>{m.desc}</div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{fontSize:12,fontWeight:800,color:m.done?"#34d399":V.accent,fontFamily:V.mono}}>+{m.xp}</div>
+                  <div style={{fontSize:8,color:V.text3}}>XP</div>
+                  {m.done&&<div style={{fontSize:14,marginTop:2}}>✓</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+// ─── Level-Up Celebration ───
+function LevelUpCelebration({rank,onDismiss}){
+  const [show,setShow]=useState(false);
+  useEffect(()=>{setTimeout(()=>setShow(true),50);},[]);
+  const dismiss=()=>{setShow(false);setTimeout(onDismiss,300);};
+  // Burst particles
+  const particles=Array.from({length:16},(_,i)=>({angle:i/16*360,color:[rank.color,"#fbbf24","#34d399","#60a5fa","#c084fc"][i%5]}));
+  return ReactDOM.createPortal(
+    <div onClick={dismiss} style={{position:"fixed",inset:0,zIndex:9998,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",opacity:show?1:0,transition:"opacity .3s",backdropFilter:"blur(4px)"}}>
+      {/* Particles */}
+      <div style={{position:"absolute",top:"50%",left:"50%",pointerEvents:"none"}}>
+        {show&&particles.map((p,i)=>{const rad=p.angle*Math.PI/180;const dist=80+Math.random()*60;return(
+          <div key={i} style={{position:"absolute",width:8,height:8,borderRadius:4,background:p.color,
+            transform:`translate(${Math.cos(rad)*dist}px, ${Math.sin(rad)*dist}px)`,
+            animation:"fadeUp .6s ease both",animationDelay:i*0.03+"s"}}/>
+        );})}
+      </div>
+      <div onClick={e=>e.stopPropagation()} style={{textAlign:"center",padding:"32px 28px",borderRadius:24,background:`linear-gradient(135deg,${rank.color}18,${rank.tierColor}08)`,border:`2px solid ${rank.color}50`,maxWidth:300,margin:"0 20px",position:"relative",zIndex:1}}>
+        <div style={{fontSize:56,marginBottom:8,lineHeight:1}}>{rank.icon}</div>
+        <div style={{fontSize:11,fontWeight:700,color:rank.color,textTransform:"uppercase",letterSpacing:2,marginBottom:4}}>Rank Up!</div>
+        <div style={{fontSize:26,fontWeight:900,color:rank.color,marginBottom:4}}>{rank.name}</div>
+        <div style={{fontSize:13,color:V.text3,marginBottom:4}}>{rank.tier} · Level {rank.level}</div>
+        <div style={{fontSize:11,color:V.text3,marginBottom:20}}>Tap anywhere to dismiss</div>
+        <div style={{padding:"10px 16px",borderRadius:10,background:`${rank.color}15`,border:`1px solid ${rank.color}30`}}>
+          <div style={{fontSize:10,color:V.text3,marginBottom:2}}>NEXT: {rank.level<30?"rank up at "+IRON_RANKS.find(r=>r.level===rank.level+1)?.xpNeeded.toLocaleString()+" XP":"MAX RANK"}</div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── Generalized UndoToast ───
+const UndoMgr={_fn:null,_timer:null,show:(msg,onUndo,accent)=>{if(UndoMgr._timer)clearTimeout(UndoMgr._timer);if(UndoMgr._fn)UndoMgr._fn({msg,onUndo,accent:accent||V.accent,ts:Date.now()});UndoMgr._timer=setTimeout(()=>{if(UndoMgr._fn)UndoMgr._fn(null);},5000);},clear:()=>{if(UndoMgr._timer)clearTimeout(UndoMgr._timer);if(UndoMgr._fn)UndoMgr._fn(null);}};
+function UndoToastBar(){
+  const [item,setItem]=useState(null);
+  UndoMgr._fn=setItem;
+  useEffect(()=>()=>{UndoMgr._fn=null;},[]);
+  if(!item)return null;
+  const age=(Date.now()-item.ts)/5000;
+  return ReactDOM.createPortal(
+    <div style={{position:"fixed",bottom:"calc(env(safe-area-inset-bottom,0px) + 88px)",left:16,right:16,zIndex:9997,display:"flex",alignItems:"center",gap:10,padding:"12px 16px",borderRadius:14,background:"rgba(20,20,32,0.97)",border:`1px solid ${item.accent}30`,backdropFilter:"blur(12px)",boxShadow:"0 4px 24px rgba(0,0,0,0.4)",animation:"fadeUp .25s ease"}}>
+      <span style={{fontSize:13,color:V.text,flex:1}}>{item.msg}</span>
+      <button onClick={()=>{item.onUndo();UndoMgr.clear();}} style={{padding:"6px 14px",borderRadius:8,background:`${item.accent}20`,border:`1px solid ${item.accent}40`,color:item.accent,fontSize:12,fontWeight:700,fontFamily:V.font,cursor:"pointer",flexShrink:0}}>Undo</button>
+    </div>,
+    document.body
+  );
+}
+
+
+// ─── Icons ───
+const I={
+  home:({s=20,c=V.text2})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+  log:({s=20,c=V.text2})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+  body:({s=20,c=V.text2})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>,
+  chart:({s=20,c=V.text2})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
+  settings:({s=20,c=V.text2})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>,
+  plus:({s=20,c=V.text2})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+  check:({s=20,c=V.text2})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+  x:({s=16,c=V.text3})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+  trash:({s=16,c=V.text3})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>,
+  search:({s=16,c=V.text3})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
+  scan:({s=16,c=V.accent2})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>,
+  droplet:({s=16,c=V.accent2})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>,
+  flame:({s=16,c=V.warn})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0011 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 11-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 002.5 3z"/></svg>,
+  target:({s=16,c=V.accent})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,
+  copy:({s=16,c=V.text2})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>,
+  chevLeft:({s=20,c=V.accent})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>,
+  chevRight:({s=16,c=V.text3})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>,
+  scale:({s=16,c=V.purple})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="3"/><line x1="12" y1="22" x2="12" y2="8"/><path d="M5 12H2a10 10 0 0020 0h-3"/></svg>,
+  leaf:({s=16,c=V.accent})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 22s4-2 4-8c0-3.31 2.69-6 6-6s6 2.69 6 6-4 8-4 8"/><path d="M6 14c0-4 4-6 6-6"/></svg>,
+};
+
+// ─── Shared Components ───
+const Card=({children,style:s={},onClick,glow})=>(
+  <div onClick={onClick} style={{background:glow?`${V.accent}08`:V.card,border:`1px solid ${glow?`${V.accent}20`:V.cardBorder}`,borderRadius:16,padding:16,...(onClick?{cursor:"pointer"}:{}),...s}}>
+    {children}
+  </div>
+);
+const Btn=({children,v="primary",full,disabled,onClick,s:ex={}})=>{
+  const base={display:"flex",alignItems:"center",justifyContent:"center",gap:6,borderRadius:12,border:"none",fontSize:14,fontWeight:600,fontFamily:V.font,cursor:disabled?"default":"pointer",opacity:disabled?.4:1,WebkitTapHighlightColor:"transparent",transition:"all .15s",minHeight:44,...(full?{width:"100%"}:{}),...ex};
+  const variants={
+    primary:{...base,background:`linear-gradient(135deg,${V.accent},${V.accent2})`,color:"#060a0e",padding:"12px 20px"},
+    secondary:{...base,background:"rgba(255,255,255,0.06)",color:V.text2,padding:"12px 20px",border:`1px solid ${V.cardBorder}`},
+    danger:{...base,background:"rgba(244,63,94,0.12)",color:V.danger,padding:"12px 20px"},
+    ghost:{...base,background:"transparent",color:V.text2,padding:"8px 12px"},
+    small:{...base,background:`${V.accent}15`,color:V.accent,padding:"8px 14px",fontSize:12,borderRadius:10,minHeight:36},
+  };
+  return <button onClick={disabled?undefined:onClick} style={variants[v]||variants.primary}>{children}</button>;
+};
+const Field=({label,value,onChange,type="text",unit,placeholder,min,max,step,autoFocus,inputMode:im})=>(
+  <div style={{marginBottom:12}}>
+    {label&&<label style={{display:"block",fontSize:11,color:V.text3,textTransform:"uppercase",letterSpacing:".08em",marginBottom:6,fontWeight:600}}>{label}</label>}
+    <div style={{position:"relative"}}>
+      <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+        min={min} max={max} step={step} autoFocus={autoFocus}
+        inputMode={im||(type==="number"?"decimal":type==="password"?"numeric":undefined)}
+        aria-label={label}
+        style={{width:"100%",padding:"12px 14px",paddingRight:unit?44:14,background:"rgba(255,255,255,0.04)",
+          border:`1px solid ${V.cardBorder}`,borderRadius:12,color:V.text,fontSize:16,fontFamily:V.mono,
+          outline:"none",boxSizing:"border-box",WebkitAppearance:"none",minHeight:44}}/>
+      {unit&&<span style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",fontSize:11,color:V.text3}}>{unit}</span>}
+    </div>
+  </div>
+);
+const Progress=({val,max,color=V.accent,h=6})=>(
+  <div style={{width:"100%",height:h,background:"rgba(255,255,255,0.05)",borderRadius:h,overflow:"hidden"}}>
+    <div style={{width:`${Math.min(100,(max>0?val/max:0)*100)}%`,height:"100%",background:val>max?V.danger:`linear-gradient(90deg,${color},${color}bb)`,borderRadius:h,transition:"width .4s ease"}}/>
+  </div>
+);
+const Chip=({label,active,onClick,color})=>(
+  <button onClick={onClick} style={{padding:"7px 14px",borderRadius:20,border:"none",fontSize:12,fontWeight:600,fontFamily:V.font,cursor:"pointer",WebkitTapHighlightColor:"transparent",
+    background:active?`${color||V.accent}18`:"rgba(255,255,255,0.04)",color:active?(color||V.accent):V.text3}}>
+    {label}
+  </button>
+);
+const Stat=({icon,label,value,unit,color=V.accent,sub})=>(
+  <Card>
+    <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <div style={{width:38,height:38,borderRadius:11,background:`${color}12`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+        {icon({s:17,c:color})}
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:10,color:V.text3,textTransform:"uppercase",letterSpacing:".06em",fontWeight:600}}>{label}</div>
+        <div style={{fontSize:22,fontWeight:700,color:V.text,fontFamily:V.mono,lineHeight:1.2}}>
+          {value}<span style={{fontSize:11,color:V.text3,marginLeft:3}}>{unit}</span>
+        </div>
+        {sub&&<div style={{fontSize:10,color:V.text3,marginTop:1}}>{sub}</div>}
+      </div>
+    </div>
+  </Card>
+);
+const Sheet=({title,onClose,children,footer})=>ReactDOM.createPortal(
+  <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9990,background:V.sheetBg,display:"flex",flexDirection:"column"}} role="dialog" aria-modal="true" aria-label={title}>
+    <div className="sheet-head" style={{flexShrink:0,display:"flex",alignItems:"center",gap:12,paddingLeft:16,paddingRight:16,borderBottom:`1px solid ${V.cardBorder}`,background:V.sheetBg,zIndex:2}}>
+      <button onClick={onClose} style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",padding:"8px 4px",WebkitTapHighlightColor:"transparent",flexShrink:0}}>
+        {I.chevLeft({s:20,c:V.accent})}<span style={{fontSize:14,color:V.accent,fontWeight:600}}>Back</span>
+      </button>
+      <h3 style={{margin:0,fontSize:16,color:V.text,fontFamily:V.font,fontWeight:700,flex:1,textAlign:"center",paddingRight:50}}>{title}</h3>
+    </div>
+    <div style={{flex:1,minHeight:0,overflowY:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain",padding:20}}>
+      {children}
+    </div>
+    {footer&&<div className="sheet-footer" style={{background:V.sheetBg}}>{footer}</div>}
+  </div>,
+  document.body
+);
+
+// ─── Toast Controller ───
+let _toastSetFn=null;
+const Toast={
+  show:(msg,color=V.accent)=>{if(_toastSetFn)_toastSetFn({msg,color,id:Date.now()});}
+};
+function ToastDisplay(){
+  const [t,setT]=useState(null);
+  _toastSetFn=setT;
+  useEffect(()=>{if(t){const tm=setTimeout(()=>setT(null),2400);return()=>clearTimeout(tm);}},[t]);
+  if(!t)return null;
+  return ReactDOM.createPortal(
+    <div role="status" aria-live="polite" style={{position:"fixed",bottom:"calc(env(safe-area-inset-bottom,0px) + 88px)",left:"50%",transform:"translateX(-50%)",zIndex:9999,
+      background:`${t.color}18`,border:`1px solid ${t.color}30`,borderRadius:12,padding:"10px 18px",
+      backdropFilter:"blur(12px)",fontSize:13,fontWeight:600,color:t.color,whiteSpace:"nowrap",
+      animation:"fadeUp .25s ease"}}>
+      {t.msg}
+    </div>,
+    document.body
+  );
+}
+
+// ─── Confirm Controller ───
+let _confirmSetFn=null;
+const ConfirmCtrl={show:(msg,detail,onConfirm)=>{if(_confirmSetFn)_confirmSetFn({msg,detail,onConfirm});}};
+function GlobalConfirm(){
+  const [c,setC]=useState(null);
+  _confirmSetFn=setC;
+  if(!c)return null;
+  return ReactDOM.createPortal(
+    <div style={{position:"fixed",inset:0,zIndex:9995,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"flex-end",padding:16}}>
+      <div style={{width:"100%",background:V.bg,borderRadius:20,padding:24,border:`1px solid ${V.cardBorder}`}}>
+        <div style={{fontSize:17,fontWeight:700,color:V.text,marginBottom:6}}>{c.msg}</div>
+        {c.detail&&<div style={{fontSize:13,color:V.text3,marginBottom:20}}>{c.detail}</div>}
+        <div style={{display:"flex",gap:10}}>
+          <Btn v="secondary" full onClick={()=>setC(null)}>Cancel</Btn>
+          <Btn v="danger" full onClick={()=>{c.onConfirm();setC(null);}}>Delete</Btn>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+const chartCfg={
+  grid:{stroke:"rgba(255,255,255,0.04)"},
+  axis:{stroke:"transparent",fontSize:9,fill:V.text3,tickLine:false,axisLine:false},
+  tip:{contentStyle:{background:V.mode==="dark"?"#1e293b":"#fff",border:`1px solid ${V.cardBorder}`,borderRadius:10,fontSize:11,color:V.text2,fontFamily:V.font,padding:"8px 12px"},cursor:{stroke:V.accent,strokeWidth:1,strokeDasharray:"4 4"}},
+};
+
+// ─── FoodSearch Component ───
+function FoodSearch({onAdd}){
+  const [q,setQ]=useState("");
+  const [dq,setDq]=useState("");
+  const [cat,setCat]=useState("All");
+  const [qty,setQty]=useState({});
+  const [showCustom,setShowCustom]=useState(false);
+  const [custom,setCustom]=useState({name:"",cal:"",protein:"",carbs:"",fat:""});
+  useEffect(()=>{const t=setTimeout(()=>setDq(q),150);return()=>clearTimeout(t);},[q]);
+  const results=useMemo(()=>{
+    if(!dq&&cat==="All")return FOODS.slice(0,20);
+    return FOODS.filter(f=>{const mc=cat==="All"||f.cat===cat;const mq=!dq||f.n.toLowerCase().includes(dq.toLowerCase());return mc&&mq;}).slice(0,30);
+  },[dq,cat]);
+  const addItem=(food)=>{
+    const m=parseFloat(qty[food.n])||1;
+    onAdd({name:food.n,cal:Math.round(food.cal*m),protein:Math.round(food.p*m),carbs:Math.round(food.c*m),fat:Math.round(food.f*m)});
+    setQty(r=>({...r,[food.n]:""}));
+    const recent=LS.get("nl-recent-foods")||[];
+    LS.set("nl-recent-foods",[food.n,...recent.filter(n=>n!==food.n)].slice(0,12));
+  };
+  const recentFoods=(LS.get("nl-recent-foods")||[]).map(name=>FOODS.find(f=>f.n===name)).filter(Boolean);
+  const addCustom=()=>{
+    if(!custom.name.trim()||!custom.cal)return;
+    onAdd({name:custom.name.trim(),cal:parseInt(custom.cal)||0,protein:parseInt(custom.protein)||0,carbs:parseInt(custom.carbs)||0,fat:parseInt(custom.fat)||0});
+    setCustom({name:"",cal:"",protein:"",carbs:"",fat:""});setShowCustom(false);
+  };
+  return(
+    <div>
+      {recentFoods.length>0&&!q&&(
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:10,fontWeight:700,color:V.text3,marginBottom:6,letterSpacing:".06em"}}>RECENT</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {recentFoods.slice(0,8).map((food,i)=>(
+              <button key={i} onClick={()=>addItem(food)} style={{padding:"6px 10px",borderRadius:8,background:`${V.accent}08`,border:`1px solid ${V.accent}15`,cursor:"pointer",fontSize:11,color:V.text,fontFamily:V.font,display:"flex",alignItems:"center",gap:4}}>
+                <span>{food.n.split("(")[0].trim()}</span>
+                <span style={{fontSize:9,color:V.accent,fontWeight:700}}>{food.cal}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div style={{position:"relative",marginBottom:10}}>
+        <div style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)"}}>{I.search({s:16,c:V.text3})}</div>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search 500+ foods..."
+          style={{width:"100%",padding:"12px 14px 12px 38px",background:"rgba(255,255,255,0.04)",border:`1px solid ${V.cardBorder}`,borderRadius:12,color:V.text,fontSize:14,outline:"none",boxSizing:"border-box",minHeight:44,fontFamily:V.font}}/>
+        {q&&<button onClick={()=>setQ("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",padding:4}}>{I.x({s:14,c:V.text3})}</button>}
+      </div>
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>
+        {FOOD_CATS.map(c=><Chip key={c} label={c} active={cat===c} onClick={()=>setCat(c)}/>)}
+      </div>
+      <div style={{maxHeight:220,overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+        {results.map((food,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 0",borderBottom:`1px solid rgba(255,255,255,0.03)`}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,color:V.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{food.n}</div>
+              <div style={{fontSize:10,color:V.text3,fontFamily:V.mono}}>
+                <span style={{color:V.warn}}>{food.cal}</span> · <span style={{color:V.accent}}>{food.p}P</span> · <span style={{color:V.accent2}}>{food.c}C</span> · <span style={{color:V.warn}}>{food.f}F</span>
+              </div>
+            </div>
+            <input type="number" inputMode="decimal" value={qty[food.n]||""} onChange={e=>setQty(q2=>({...q2,[food.n]:e.target.value}))}
+              placeholder="1" step="0.5" style={{width:44,padding:"6px 4px",background:"rgba(255,255,255,0.04)",border:`1px solid ${V.cardBorder}`,borderRadius:8,color:V.text,fontSize:12,fontFamily:V.mono,textAlign:"center",outline:"none"}}/>
+            <button onClick={()=>addItem(food)} style={{width:36,height:36,borderRadius:10,background:`${V.accent}15`,border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",WebkitTapHighlightColor:"transparent"}}>
+              {I.plus({s:14,c:V.accent})}
+            </button>
+          </div>
+        ))}
+        {results.length===0&&<div style={{textAlign:"center",padding:16,color:V.text3,fontSize:12}}>No results for "{q}"</div>}
+      </div>
+      {!showCustom?(
+        <button onClick={()=>setShowCustom(true)} style={{width:"100%",padding:"10px",marginTop:8,background:"rgba(255,255,255,0.02)",border:`1px dashed ${V.cardBorder}`,borderRadius:10,cursor:"pointer",fontSize:11,color:V.accent,fontWeight:600,fontFamily:V.font}}>
+          + Add Custom Food
+        </button>
+      ):(
+        <div style={{marginTop:8,padding:10,background:"rgba(255,255,255,0.02)",borderRadius:10,border:`1px solid ${V.cardBorder}`}}>
+          <div style={{fontSize:11,fontWeight:700,color:V.text,marginBottom:6}}>Custom Entry</div>
+          <input value={custom.name} onChange={e=>setCustom(c=>({...c,name:e.target.value}))} placeholder="Food name *"
+            style={{width:"100%",padding:"8px 10px",background:"rgba(255,255,255,0.04)",border:`1px solid ${V.cardBorder}`,borderRadius:8,color:V.text,fontSize:12,outline:"none",marginBottom:6,boxSizing:"border-box",fontFamily:V.font}}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:4,marginBottom:8}}>
+            {[{k:"cal",l:"Cal"},{k:"protein",l:"Prot"},{k:"carbs",l:"Carb"},{k:"fat",l:"Fat"}].map(f=>(
+              <div key={f.k}>
+                <div style={{fontSize:8,color:V.text3,fontWeight:600,marginBottom:2}}>{f.l}</div>
+                <input type="number" inputMode="numeric" value={custom[f.k]} onChange={e=>setCustom(c=>({...c,[f.k]:e.target.value}))}
+                  placeholder="0" style={{width:"100%",padding:"6px 4px",background:"rgba(255,255,255,0.04)",border:`1px solid ${V.cardBorder}`,borderRadius:6,color:V.text,fontSize:11,fontFamily:V.mono,textAlign:"center",outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>setShowCustom(false)} style={{flex:1,padding:"7px",borderRadius:8,background:"rgba(255,255,255,0.04)",border:`1px solid ${V.cardBorder}`,cursor:"pointer",fontSize:10,color:V.text3,fontFamily:V.font}}>Cancel</button>
+            <button onClick={addCustom} disabled={!custom.name.trim()||!custom.cal} style={{flex:1,padding:"7px",borderRadius:8,background:V.accent,border:"none",cursor:"pointer",fontSize:10,fontWeight:700,color:"#060a0e",fontFamily:V.font,opacity:(!custom.name.trim()||!custom.cal)?0.4:1}}>Add Food</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Barcode Scanner ───
+function BarcodeScanner({onResult,onClose}){
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+  const [barcode,setBarcode]=useState("");
+  const videoRef=useRef(null);
+  const streamRef=useRef(null);
+  const stopCamera=()=>{streamRef.current?.getTracks().forEach(t=>t.stop());};
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1280},height:{ideal:720}}});
+        streamRef.current=s;
+        if(videoRef.current){videoRef.current.srcObject=s;await videoRef.current.play();}
+        setLoading(false);
+      }catch(e){setError("Camera access denied. Please allow camera and try again.");setLoading(false);}
+    })();
+    return()=>stopCamera();
+  },[]);
+  const lookup=async()=>{
+    if(!barcode.trim())return;
+    setLoading(true);
+    try{
+      const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode.trim()}.json`);
+      const j=await r.json();
+      if(j.status===1&&j.product?.nutriments){
+        const p=j.product;const n=p.nutriments;const serv=p.serving_size||"100g";
+        const cal=Math.round(n["energy-kcal_serving"]||n["energy-kcal_100g"]||0);
+        const protein=Math.round(n.proteins_serving||n.proteins_100g||0);
+        const carbs=Math.round(n.carbohydrates_serving||n.carbohydrates_100g||0);
+        const fat=Math.round(n.fat_serving||n.fat_100g||0);
+        const safeName=String(p.product_name||"Food").replace(/[<>&"']/g,"").slice(0,100);
+        const safeServ=String(serv).replace(/[<>&"']/g,"").slice(0,30);
+        onResult({name:`${safeName} (${safeServ})`,cal,protein,carbs,fat});
+        stopCamera();onClose();
+      }else{setError("Product not found. Try manual entry.");setLoading(false);}
+    }catch(e){setError("Lookup failed. Check connection.");setLoading(false);}
+  };
+  return ReactDOM.createPortal(
+    <div style={{position:"fixed",inset:0,zIndex:9995,background:"#000",display:"flex",flexDirection:"column"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"max(16px,env(safe-area-inset-top,0px)) 16px 12px",background:"rgba(0,0,0,0.8)"}}>
+        <button onClick={()=>{stopCamera();onClose();}} style={{background:"none",border:"none",cursor:"pointer",color:V.accent,fontSize:14,fontWeight:600,fontFamily:V.font,display:"flex",alignItems:"center",gap:4}}>
+          {I.chevLeft({s:20,c:V.accent})} Back
+        </button>
+        <span style={{color:"white",fontWeight:600,fontSize:16,flex:1,textAlign:"center",marginRight:40}}>Scan Barcode</span>
+      </div>
+      {loading&&<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.5)",fontSize:13}}>Initializing camera...</div>}
+      <video ref={videoRef} muted playsInline style={{flex:1,objectFit:"cover",display:loading?"none":"block"}}/>
+      <div style={{padding:"16px",paddingBottom:"max(24px,env(safe-area-inset-bottom,0px))",background:"rgba(0,0,0,0.85)"}}>
+        {error&&<div style={{color:V.danger,fontSize:12,marginBottom:10,textAlign:"center"}}>{error}</div>}
+        <div style={{display:"flex",gap:8}}>
+          <input value={barcode} onChange={e=>setBarcode(e.target.value)} placeholder="Enter barcode manually..."
+            inputMode="numeric" onKeyDown={e=>e.key==="Enter"&&lookup()}
+            style={{flex:1,padding:"12px",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:12,color:"white",fontSize:16,fontFamily:V.mono,outline:"none"}}/>
+          <button onClick={lookup} style={{padding:"12px 20px",background:V.accent,border:"none",borderRadius:12,cursor:"pointer",fontSize:14,fontWeight:700,color:"#060a0e",fontFamily:V.font}}>Lookup</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── Height parsing helper ───
+function parseHeightToM(h){
+  if(!h)return null;const hs=String(h).trim();
+  const cm=hs.match(/^([\d.]+)\s*cm$/i);if(cm)return parseFloat(cm[1])/100;
+  const fi=hs.match(/^(\d+)['\s](\d+)/);if(fi)return(parseInt(fi[1])*12+parseInt(fi[2]))*0.0254;
+  const ff=hs.match(/^(\d+)'?$/);if(ff)return parseInt(ff[1])*0.3048;
+  return null;
+}
+
+// ─── Nutrition streak hook ───
+function useNutritionStreak(nutrition){
+  return useMemo(()=>{
+    let c=0,i=0;
+    while(nutrition.some(n=>n.date===ago(i))){c++;i++;}
+    return c;
+  },[nutrition]);
+}
+
+// ─── State ───
+const init={
+  tab:"home",nutrition:[],body:[],
+  goals:{cal:2200,protein:180,carbs:220,fat:65,goalWeight:175,tdee:0,fiber:25},
+  units:"lbs",loaded:false,onboarded:false,
+  profile:{firstName:"",lastName:"",email:"",height:"",sex:""},
+};
+
+function reducer(s,a){
+  switch(a.type){
+    case "INIT": return{...s,...a.p,loaded:true};
+    case "TAB": return{...s,tab:a.tab};
+    case "ADD_N": return{...s,nutrition:[a.n,...s.nutrition].sort((a,b)=>b.date.localeCompare(a.date))};
+    case "EDIT_N": return{...s,nutrition:s.nutrition.map(n=>n.id===a.n.id?a.n:n)};
+    case "DEL_N": return{...s,nutrition:s.nutrition.filter(n=>n.id!==a.id)};
+    case "ADD_B": return{...s,body:[a.b,...s.body].sort((a,b)=>b.date.localeCompare(a.date))};
+    case "EDIT_B": return{...s,body:s.body.map(b=>b.id===a.b.id?a.b:b)};
+    case "DEL_B": return{...s,body:s.body.filter(b=>b.id!==a.id)};
+    case "GOALS": return{...s,goals:{...s.goals,...a.g}};
+    case "UNITS": return{...s,units:a.units};
+    case "PROFILE": return{...s,profile:{...s.profile,...a.p}};
+    case "ONBOARD": return{...s,...a.data,onboarded:true};
+    default: return s;
+  }
+}
+
+// ─── MacroRing component ───
+function MacroRing({value,goal,color,label}){
+  const pct=goal>0?Math.min(1,value/goal):0;
+  const r=22,circ=2*Math.PI*r;
+  return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+      <svg width={54} height={54} style={{transform:"rotate(-90deg)"}}>
+        <circle cx={27} cy={27} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={5}/>
+        <circle cx={27} cy={27} r={r} fill="none" stroke={color} strokeWidth={5}
+          strokeDasharray={circ} strokeDashoffset={circ*(1-pct)} strokeLinecap="round" style={{transition:"stroke-dashoffset .5s"}}/>
+      </svg>
+      <div style={{marginTop:-40,display:"flex",flexDirection:"column",alignItems:"center",height:40,justifyContent:"center"}}>
+        <div style={{fontSize:11,fontWeight:800,color,fontFamily:V.mono}}>{value}</div>
+        <div style={{fontSize:7,color:V.text3}}>/{goal}</div>
+      </div>
+      <div style={{fontSize:8,color:V.text3,fontWeight:600}}>{label}</div>
+    </div>
+  );
+}
+
+// ─── HOME TAB ───
+function HomeTab({s,d,score,missions}){
+  const streak=useNutritionStreak(s.nutrition);
+  const td=today();
+  const todayN=s.nutrition.find(n=>n.date===td);
+  const tCal=todayN?.cal||0,tProt=todayN?.protein||0,tCarbs=todayN?.carbs||0,tFat=todayN?.fat||0;
+  const calGoal=s.goals?.cal||2200,protGoal=s.goals?.protein||180;
+  const calPct=Math.min(100,Math.round(tCal/calGoal*100)),protPct=Math.min(100,Math.round(tProt/protGoal*100));
+  const calRemaining=calGoal-tCal;
+  const baseline=parseInt(s.goals?.tdee)||calGoal;
+  const calDiff=tCal-baseline;
+  const [waterCount,setWaterCount]=useState(()=>parseInt(LS.get("nl-water-"+today()))||0);
+  const name=s.profile?.firstName||"";
+  const hour=new Date().getHours();
+  const greeting=hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
+  const todayN2=s.nutrition.find(n=>n.date===td);
+  const todayMeals=Array.isArray(todayN2?.meals)?todayN2.meals:[];
+  const totalMealItems=todayMeals.reduce((t,m)=>(m.items||[]).length+t,0);
+  return(
+    <div className="fade-up" style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderRadius:12,background:`${score.rank.color}10`,border:`1px solid ${score.rank.color}25`,cursor:"pointer"}}>
+        <IronScoreCard score={score} compact={true}/>
+        <div style={{marginLeft:"auto",fontSize:9,color:V.text3,textAlign:"right"}}>Level {score.rank.level}<br/>{score.pct}% to next</div>
+      </div>
+      <MissionsPanel missions={missions}/>
+
+      {/* Greeting header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+        <div>
+          <div style={{fontSize:22,fontWeight:800,color:V.text}}>{greeting}{name?`, ${name}`:""}</div>
+          <div style={{fontSize:12,color:V.text3,marginTop:2}}>
+            {streak>0?<span style={{color:V.accent}}>🔥 {streak}-day streak</span>:"Start logging today"}
+          </div>
+        </div>
+        <div style={{fontSize:24}}>{I.leaf({s:24,c:V.accent})}</div>
+      </div>
+
+      {/* Calorie Budget Card — hero widget */}
+      <Card style={{padding:16,background:`linear-gradient(135deg,${V.accent}10,${V.accent2}08)`,border:`1px solid ${V.accent}20`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:V.text3,textTransform:"uppercase",letterSpacing:".08em",marginBottom:2}}>Calories Remaining</div>
+            <div style={{fontSize:40,fontWeight:900,color:calRemaining>=0?V.accent:V.danger,fontFamily:V.mono,lineHeight:1}}>
+              {Math.abs(calRemaining)}
+            </div>
+            <div style={{fontSize:11,color:V.text3,marginTop:2}}>
+              {calRemaining>=0?"left today":"over budget"}
+            </div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:10,color:V.text3}}>logged</div>
+            <div style={{fontSize:20,fontWeight:700,color:V.warn,fontFamily:V.mono}}>{tCal}</div>
+            <div style={{fontSize:10,color:V.text3}}>/ {calGoal}</div>
+            {tCal>0&&<div style={{fontSize:10,marginTop:4,color:calDiff>100?V.warn:calDiff<-100?V.accent:V.text3,fontWeight:600}}>
+              {calDiff>0?"+":""}{calDiff} {parseInt(s.goals?.tdee)?"vs TDEE":"vs goal"}
+            </div>}
+          </div>
+        </div>
+        <Progress val={tCal} max={calGoal} color={tCal>calGoal?V.danger:V.accent} h={8}/>
+      </Card>
+
+      {/* Macro rings */}
+      {tCal>0&&(
+        <Card style={{padding:12}}>
+          <div style={{display:"flex",justifyContent:"space-around"}}>
+            <MacroRing value={tProt} goal={s.goals?.protein||180} color={V.accent} label="Protein"/>
+            <MacroRing value={tCarbs} goal={s.goals?.carbs||220} color={V.accent2} label="Carbs"/>
+            <MacroRing value={tFat} goal={s.goals?.fat||65} color={V.warn} label="Fat"/>
+            <MacroRing value={todayN?.fiber||0} goal={s.goals?.fiber||25} color={V.purple} label="Fiber"/>
+          </div>
+        </Card>
+      )}
+
+      {/* Quick log button */}
+      <Btn full onClick={()=>d({type:"TAB",tab:"log"})}>
+        {I.plus({s:16,c:"#060a0e"})} Log Today's Nutrition
+      </Btn>
+
+      {/* Today's meals preview */}
+      {todayMeals.some(m=>(m.items||[]).length>0)&&(
+        <Card style={{padding:12}}>
+          <div style={{fontSize:10,fontWeight:700,color:V.text3,textTransform:"uppercase",letterSpacing:".06em",marginBottom:10}}>Today's Meals</div>
+          {todayMeals.filter(m=>(m.items||[]).length>0).map((meal,i)=>{
+            const mCal=(meal.items||[]).reduce((s,it)=>s+it.cal,0);
+            const mProt=(meal.items||[]).reduce((s,it)=>s+it.protein,0);
+            return(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:V.text}}>{meal.name}</div>
+                  <div style={{fontSize:10,color:V.text3}}>{(meal.items||[]).length} items</div>
+                </div>
+                <div style={{textAlign:"right",fontFamily:V.mono}}>
+                  <div style={{fontSize:13,fontWeight:700,color:V.warn}}>{mCal}</div>
+                  <div style={{fontSize:10,color:V.accent}}>{mProt}P</div>
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+      )}
+
+      {/* Water tracker */}
+      <Card style={{padding:12}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {I.droplet({s:16,c:V.accent2})}
+            <span style={{fontSize:13,fontWeight:700,color:V.text}}>Water</span>
+            <span style={{fontSize:10,color:waterCount>=8?V.accent:V.text3,fontWeight:600}}>{waterCount>=8?"Goal hit! 💧":""}</span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <button onClick={()=>{if(waterCount>0){const n=waterCount-1;setWaterCount(n);LS.set("nl-water-"+td,n);}}}
+              style={{width:32,height:32,borderRadius:8,background:"rgba(255,255,255,0.04)",border:`1px solid ${V.cardBorder}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:V.text3}}>−</button>
+            <div style={{minWidth:54,textAlign:"center"}}>
+              <span style={{fontSize:20,fontWeight:800,color:V.accent2,fontFamily:V.mono}}>{waterCount}</span>
+              <span style={{fontSize:10,color:V.text3}}>/8</span>
+            </div>
+            <button onClick={()=>{Haptic.light();const n=waterCount+1;setWaterCount(n);LS.set("nl-water-"+td,n);if(n>=8)Toast.show("💧 Hydration goal hit! 🎉",V.accent2);}}
+              style={{width:32,height:32,borderRadius:8,background:`${V.accent2}15`,border:`1px solid ${V.accent2}25`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:V.accent2,fontWeight:700}}>+</button>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:4}}>
+          {Array.from({length:8}).map((_,i)=>(
+            <div key={i} style={{flex:1,height:20,borderRadius:4,background:i<waterCount?`${V.accent2}60`:"rgba(255,255,255,0.04)",transition:"background .2s"}}/>
+          ))}
+        </div>
+      </Card>
+
+      {/* 7-day adherence */}
+      {s.nutrition.length>0&&(
+        <Card style={{padding:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div style={{fontSize:11,fontWeight:700,color:V.text}}>7-Day Adherence</div>
+            <div style={{fontSize:9,color:V.text3}}>Calories & Protein</div>
+          </div>
+          <div style={{display:"flex",gap:4}}>
+            {Array.from({length:7}).map((_,i)=>{
+              const day=ago(6-i);
+              const n=s.nutrition.find(x=>x.date===day);
+              const calOk=n&&s.goals?.cal?n.cal>=s.goals.cal*0.85:false;
+              const protOk=n&&s.goals?.protein?n.protein>=s.goals.protein*0.9:false;
+              const both=calOk&&protOk;const either=calOk||protOk;const isToday=day===today();
+              return(
+                <div key={i} style={{flex:1,display:"flex",flexDirection:"column",gap:2,alignItems:"center"}}>
+                  <div style={{width:"100%",height:28,borderRadius:5,border:isToday?`1px solid ${V.accent}40`:"none",
+                    background:both?"linear-gradient(180deg,#22c55e,#16a34a)":either?"linear-gradient(180deg,#f59e0b,#d97706)":n?"rgba(244,63,94,0.25)":"rgba(255,255,255,0.04)"}}/>
+                  <div style={{fontSize:7,color:isToday?V.accent:V.text3,fontWeight:isToday?700:400}}>
+                    {["Su","Mo","Tu","We","Th","Fr","Sa"][new Date(day+"T12:00:00").getDay()]}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",gap:10,marginTop:6}}>
+            {[{c:"#22c55e",l:"Both"},{c:"#f59e0b",l:"Partial"},{c:"rgba(244,63,94,0.4)",l:"Missed"}].map(x=>(
+              <div key={x.l} style={{display:"flex",alignItems:"center",gap:3}}>
+                <div style={{width:8,height:8,borderRadius:2,background:x.c}}/><span style={{fontSize:7,color:V.text3}}>{x.l}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {s.nutrition.length===0&&(
+        <div style={{textAlign:"center",padding:"40px 20px",color:V.text3}}>
+          <div style={{fontSize:48,marginBottom:12}}>🥗</div>
+          <div style={{fontSize:16,fontWeight:600,color:V.text2,marginBottom:6}}>Nothing logged yet</div>
+          <div style={{fontSize:13}}>Tap Log above to track your first meal</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── LOG TAB ───
+function LogTab({s,d}){
+  const emptyForm={date:today(),cal:"",protein:"",carbs:"",fat:"",fiber:"",water:"",sleep:"",
+    meals:[{name:"Breakfast",items:[]},{name:"Lunch",items:[]},{name:"Dinner",items:[]},{name:"Snacks",items:[]}]};
+  const [show,setShow]=useState(false);
+  const [form,setForm]=useState(emptyForm);
+  const [activeMeal,setActiveMeal]=useState(null);
+  const [scanMeal,setScanMeal]=useState(null);
+  const [editingId,setEditingId]=useState(null);
+  const [favName,setFavName]=useState("");
+  const [showFavInput,setShowFavInput]=useState(false);
+  const [showFF,setShowFF]=useState(false);
+  const [ffFilter,setFfFilter]=useState("All");
+  const td=today();
+
+  const start=()=>{
+    const ex=s.nutrition.find(n=>n.date===td);
+    if(ex){setForm({...ex,cal:ex.cal.toString(),protein:ex.protein.toString(),carbs:ex.carbs.toString(),fat:ex.fat.toString(),
+      fiber:(ex.fiber||"").toString(),water:(ex.water||"").toString(),sleep:(ex.sleep||"").toString(),
+      meals:ex.meals||emptyForm.meals});setEditingId(ex.id);}
+    else{setForm(emptyForm);setEditingId(null);}
+    setShow(true);
+  };
+
+  const copyYesterday=()=>{
+    const prev=s.nutrition.find(n=>n.date===ago(1));
+    if(prev){setForm({date:td,cal:prev.cal.toString(),protein:prev.protein.toString(),carbs:prev.carbs.toString(),
+      fat:prev.fat.toString(),fiber:(prev.fiber||"").toString(),water:(prev.water||"").toString(),sleep:"",
+      meals:prev.meals||emptyForm.meals});setEditingId(null);setShow(true);}
+  };
+
+  const addFoodToMeal=(mi,food)=>setForm(f=>{const m=[...f.meals];m[mi]={...m[mi],items:[...(m[mi].items||[]),food]};return{...f,meals:m};});
+  const rmFoodFromMeal=(mi,fi)=>setForm(f=>{const m=[...f.meals];m[mi]={...m[mi],items:m[mi].items.filter((_,i)=>i!==fi)};return{...f,meals:m};});
+
+  const autoCalc=()=>{
+    let cal=0,protein=0,carbs=0,fat=0;
+    form.meals.forEach(m=>(m.items||[]).forEach(i=>{cal+=i.cal||0;protein+=i.protein||0;carbs+=i.carbs||0;fat+=i.fat||0;}));
+    setForm(f=>({...f,cal:cal.toString(),protein:protein.toString(),carbs:carbs.toString(),fat:fat.toString()}));
+  };
+
+  const save=()=>{
+    const n={id:editingId||uid(),date:form.date,cal:parseInt(form.cal)||0,protein:parseInt(form.protein)||0,
+      carbs:parseInt(form.carbs)||0,fat:parseInt(form.fat)||0,fiber:parseInt(form.fiber)||0,
+      water:parseInt(form.water)||0,sleep:parseFloat(form.sleep)||0,meals:form.meals};
+    if(editingId){d({type:"EDIT_N",n});Toast.show("Updated",V.accent);}
+    else{d({type:"ADD_N",n});Toast.show("Nutrition logged +8 XP 🥗",V.accent);}
+    Haptic.success();setShow(false);setEditingId(null);
+  };
+
+  const editEntry=(n)=>{
+    setForm({...n,cal:n.cal?.toString()||"",protein:n.protein?.toString()||"",carbs:n.carbs?.toString()||"",fat:n.fat?.toString()||"",
+      fiber:(n.fiber||"").toString(),water:(n.water||"").toString(),sleep:(n.sleep||"").toString(),meals:n.meals||emptyForm.meals});
+    setEditingId(n.id);setShow(true);
+  };
+
+  const totalItems=form.meals.reduce((s,m)=>(m.items||[]).length+s,0);
+  const favs=LS.get("nl-meal-favs")||[];
+  const ffBrands=["All",...[...new Set(FF_HACKS.map(h=>h.r))].sort()];
+
+  return(
+    <div className="fade-up" style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",gap:8}}>
+        <Btn full onClick={start}>{I.plus({s:16,c:"#060a0e"})} Log Today</Btn>
+        {s.nutrition.find(n=>n.date===ago(1))&&(
+          <Btn v="secondary" onClick={copyYesterday} s={{flexShrink:0,fontSize:11}}>
+            {I.copy({s:14,c:V.text2})} Yesterday
+          </Btn>
+        )}
+      </div>
+
+      {/* Meal Favorites */}
+      {favs.length>0&&(
+        <div>
+          <div style={{fontSize:10,fontWeight:700,color:V.text3,marginBottom:6,letterSpacing:".06em"}}>SAVED MEALS</div>
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
+            {favs.map((fav,i)=>(
+              <button key={i} onClick={()=>{
+                setForm(f=>({...f,meals:fav.meals,cal:fav.cal?.toString()||"",protein:fav.protein?.toString()||"",carbs:fav.carbs?.toString()||"",fat:fav.fat?.toString()||""}));
+                setShow(true);Toast.show(`Loaded: ${fav.name}`,V.accent);
+              }} style={{padding:"8px 12px",borderRadius:8,background:`${V.accent}06`,border:`1px solid ${V.accent}15`,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,textAlign:"left"}}>
+                <div style={{fontSize:11,fontWeight:600,color:V.text}}>{fav.name}</div>
+                <div style={{fontSize:9,color:V.text3,fontFamily:V.mono}}>{fav.cal}cal · {fav.protein}P</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Fast Food Hacks */}
+      <div style={{background:V.card,border:`1px solid ${V.cardBorder}`,borderRadius:16,overflow:"hidden"}}>
+        <button onClick={()=>setShowFF(f=>!f)} style={{width:"100%",padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"none",border:"none",cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:18}}>🍔</span>
+            <div style={{textAlign:"left"}}>
+              <div style={{fontSize:14,fontWeight:700,color:V.text}}>Fast Food Hacks</div>
+              <div style={{fontSize:11,color:V.text3}}>{FF_HACKS.length} high-protein orders</div>
+            </div>
+          </div>
+          <div style={{transition:"transform .2s",transform:showFF?"rotate(90deg)":"none"}}>
+            {I.chevRight({s:16,c:V.text3})}
+          </div>
+        </button>
+        {showFF&&(
+          <div style={{padding:"0 16px 16px",borderTop:`1px solid ${V.cardBorder}`}}>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:10,marginBottom:10}}>
+              {ffBrands.slice(0,8).map(b=><Chip key={b} label={b} active={ffFilter===b} onClick={()=>setFfFilter(b)}/>)}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {FF_HACKS.filter(h=>ffFilter==="All"||h.r===ffFilter).map((h,i)=>(
+                <div key={i} style={{padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,0.02)",border:`1px solid ${V.cardBorder}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                    <span style={{fontSize:12,fontWeight:700,color:V.warn}}>{h.r}</span>
+                    <div style={{display:"flex",gap:8,fontFamily:V.mono}}>
+                      <span style={{fontSize:11,color:V.warn}}>{h.cal}cal</span>
+                      {h.p&&<span style={{fontSize:11,color:V.accent}}>{h.p}P</span>}
+                    </div>
+                  </div>
+                  <p style={{margin:0,fontSize:11,color:V.text2,lineHeight:1.5}}>{h.d}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Log sheet */}
+      {show&&(
+        <Sheet title={editingId?"Edit Nutrition":"Log Nutrition"} onClose={()=>{setShow(false);setEditingId(null);}}
+          footer={<Btn full onClick={save}>{I.check({s:16,c:"#060a0e"})} {editingId?"Update":"Save"} Nutrition</Btn>}>
+          <Field label="Date" type="date" value={form.date} onChange={v=>setForm(f=>({...f,date:v}))}/>
+          {form.meals.map((meal,mi)=>{
+            const mCal=(meal.items||[]).reduce((s,i)=>s+i.cal,0);
+            const mP=(meal.items||[]).reduce((s,i)=>s+i.protein,0);
+            return(
+              <div key={mi} style={{marginBottom:12,padding:12,background:"rgba(255,255,255,0.02)",borderRadius:14,border:`1px solid ${V.cardBorder}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:13,fontWeight:700,color:V.text}}>{meal.name}</span>
+                    <input type="time" value={meal.time||""} onChange={e=>setForm(f=>{const ms=[...f.meals];ms[mi]={...ms[mi],time:e.target.value};return{...f,meals:ms};})}
+                      style={{padding:"6px 8px",borderRadius:8,background:"rgba(255,255,255,0.04)",border:`1px solid ${V.cardBorder}`,color:V.text3,fontSize:11,fontFamily:V.mono,outline:"none",width:80,minHeight:32}}/>
+                  </div>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    {mCal>0&&<span style={{fontSize:10,color:V.warn,fontFamily:V.mono}}>{mCal}cal · {mP}P</span>}
+                    <button onClick={()=>setScanMeal(mi)} style={{background:`${V.accent2}15`,border:"none",borderRadius:8,padding:"4px 8px",cursor:"pointer",display:"flex",alignItems:"center",gap:3}}>
+                      {I.scan({s:12,c:V.accent2})}
+                    </button>
+                    <button onClick={()=>setActiveMeal(activeMeal===mi?null:mi)}
+                      style={{background:`${V.accent}15`,border:"none",borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:11,color:V.accent,fontWeight:600,WebkitTapHighlightColor:"transparent"}}>
+                      {activeMeal===mi?"Close":"+ Food"}
+                    </button>
+                  </div>
+                </div>
+                {(meal.items||[]).map((item,fi)=>(
+                  <div key={fi} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                    <span style={{fontSize:12,color:V.text2,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.name}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                      <span style={{fontSize:10,color:V.text3,fontFamily:V.mono}}>{item.cal} · {item.protein}P</span>
+                      <button onClick={()=>rmFoodFromMeal(mi,fi)} style={{background:"none",border:"none",padding:2,cursor:"pointer"}}>{I.x({s:12,c:V.text3})}</button>
+                    </div>
+                  </div>
+                ))}
+                {activeMeal===mi&&<div style={{marginTop:8}}><FoodSearch onAdd={(food)=>addFoodToMeal(mi,food)}/></div>}
+              </div>
+            );
+          })}
+          {totalItems>0&&<Btn v="small" full onClick={autoCalc} s={{marginBottom:12}}>Auto-calculate totals from items</Btn>}
+          {totalItems>0&&!showFavInput&&(
+            <button onClick={()=>setShowFavInput(true)} style={{width:"100%",padding:"8px",borderRadius:8,background:"rgba(255,255,255,0.02)",border:`1px dashed ${V.cardBorder}`,cursor:"pointer",fontSize:11,color:V.accent,fontFamily:V.font,marginBottom:12}}>
+              ⭐ Save as Meal Favorite
+            </button>
+          )}
+          {showFavInput&&(
+            <div style={{display:"flex",gap:6,marginBottom:12}}>
+              <input value={favName} onChange={e=>setFavName(e.target.value)} placeholder="Meal name..."
+                autoFocus style={{flex:1,padding:"8px 10px",background:V.card,border:`1px solid ${V.cardBorder}`,borderRadius:8,color:V.text,fontSize:12,outline:"none",fontFamily:V.font}}/>
+              <Btn onClick={()=>{
+                if(!favName.trim()){setShowFavInput(false);return;}
+                autoCalc();
+                setTimeout(()=>{
+                  const saved=LS.get("nl-meal-favs")||[];
+                  const cal=form.meals.reduce((s,m)=>(m.items||[]).reduce((a,i)=>a+i.cal,0)+s,0);
+                  const protein=form.meals.reduce((s,m)=>(m.items||[]).reduce((a,i)=>a+i.protein,0)+s,0);
+                  const carbs=form.meals.reduce((s,m)=>(m.items||[]).reduce((a,i)=>a+(i.carbs||0),0)+s,0);
+                  const fat=form.meals.reduce((s,m)=>(m.items||[]).reduce((a,i)=>a+(i.fat||0),0)+s,0);
+                  LS.set("nl-meal-favs",[{name:favName.trim(),meals:form.meals,cal,protein,carbs,fat},...saved.filter(f=>f.name!==favName.trim())].slice(0,10));
+                  Toast.show("Meal saved!",V.accent);setFavName("");setShowFavInput(false);
+                },100);
+              }} s={{flexShrink:0}}>Save</Btn>
+              <button onClick={()=>{setFavName("");setShowFavInput(false);}} style={{padding:"8px",borderRadius:8,background:"rgba(255,255,255,0.04)",border:`1px solid ${V.cardBorder}`,cursor:"pointer",fontSize:11,color:V.text3}}>✕</button>
+            </div>
+          )}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <Field label="Calories" type="number" value={form.cal} onChange={v=>setForm(f=>({...f,cal:v}))} unit="kcal"/>
+            <Field label="Protein" type="number" value={form.protein} onChange={v=>setForm(f=>({...f,protein:v}))} unit="g"/>
+            <Field label="Carbs" type="number" value={form.carbs} onChange={v=>setForm(f=>({...f,carbs:v}))} unit="g"/>
+            <Field label="Fat" type="number" value={form.fat} onChange={v=>setForm(f=>({...f,fat:v}))} unit="g"/>
+            <Field label="Fiber" type="number" value={form.fiber} onChange={v=>setForm(f=>({...f,fiber:v}))} unit="g"/>
+            <Field label="Water" type="number" value={form.water} onChange={v=>setForm(f=>({...f,water:v}))} unit="cups"/>
+            <Field label="Sleep" type="number" value={form.sleep} onChange={v=>setForm(f=>({...f,sleep:v}))} unit="hrs" step="0.5"/>
+          </div>
+        </Sheet>
+      )}
+
+      {scanMeal!==null&&<BarcodeScanner onResult={(food)=>addFoodToMeal(scanMeal,food)} onClose={()=>setScanMeal(null)}/>}
+
+      {/* History */}
+      {s.nutrition.length>0&&(
+        <div>
+          <div style={{fontSize:10,fontWeight:700,color:V.text3,marginBottom:8,letterSpacing:".06em"}}>HISTORY</div>
+          {s.nutrition.slice(0,21).map(n=>(
+            <Card key={n.id} onClick={()=>editEntry(n)} style={{padding:14,cursor:"pointer",marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:12,color:V.text2}}>{fmtFull(n.date)}{n.date===td&&<span style={{marginLeft:6,fontSize:10,color:V.accent,fontWeight:700}}>Today</span>}</span>
+                <button aria-label={`Delete nutrition log for ${fmtFull(n.date)}`} onClick={e=>{e.stopPropagation();ConfirmCtrl.show("Delete nutrition log?",fmtFull(n.date),()=>{const deleted=n;d({type:"DEL_N",id:n.id});UndoMgr.show("Nutrition log deleted",()=>d({type:"ADD_N",n:deleted}),V.danger);});}} style={{background:"none",border:"none",padding:4,cursor:"pointer"}}>{I.trash({s:13,c:V.text3})}</button>
+              </div>
+              <div style={{display:"flex",gap:12,marginTop:6,alignItems:"baseline"}}>
+                <span style={{fontSize:18,fontWeight:700,color:V.warn,fontFamily:V.mono}}>{n.cal}<span style={{fontSize:10,color:V.text3}}> kcal</span></span>
+                <span style={{fontSize:12,color:V.accent,fontFamily:V.mono}}>{n.protein}P</span>
+                <span style={{fontSize:12,color:V.accent2,fontFamily:V.mono}}>{n.carbs}C</span>
+                <span style={{fontSize:12,color:V.warn,fontFamily:V.mono}}>{n.fat}F</span>
+                {n.fiber>0&&<span style={{fontSize:10,color:V.purple,fontFamily:V.mono}}>{n.fiber}Fb</span>}
+              </div>
+              <div style={{marginTop:6}}>
+                <Progress val={n.cal} max={s.goals.cal} color={V.warn} h={3}/>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── BODY TAB ───
+function BodyTab({s,d}){
+  const [show,setShow]=useState(false);
+  const emptyForm={date:today(),weight:"",bf:"",waist:"",hips:"",chest:"",neck:"",arms:"",thighs:"",calves:""};
+  const [form,setForm]=useState(emptyForm);
+  const [showMeasurements,setShowMeasurements]=useState(false);
+  const td=today();
+
+  const save=()=>{
+    const existing=s.body.find(e=>e.date===form.date);
+    const b={id:existing?existing.id:uid(),date:form.date,weight:parseFloat(form.weight)||0,bf:parseFloat(form.bf)||0,
+      waist:parseFloat(form.waist)||0,hips:parseFloat(form.hips)||0,chest:parseFloat(form.chest)||0,
+      neck:parseFloat(form.neck)||0,arms:parseFloat(form.arms)||0,thighs:parseFloat(form.thighs)||0,calves:parseFloat(form.calves)||0};
+    d({type:existing?"EDIT_B":"ADD_B",b});Haptic.success();Toast.show("Body log saved",V.accent);setShow(false);
+  };
+
+  const latest=s.body[0],prev=s.body[1];
+  const wc=latest&&prev?(parseFloat(latest.weight)||0)-(parseFloat(prev.weight)||0):0;
+
+  const trend=useMemo(()=>s.body.filter(m=>m.date>=ago(60)).sort((a,b)=>a.date.localeCompare(b.date)).map(m=>({date:fmtShort(m.date),wt:+(parseFloat(m.weight)||0).toFixed(1),bf:+((parseFloat(m.bf)||0).toFixed(1))})),[s.body]);
+
+  const ffmiCard=(()=>{
+    const hM=parseHeightToM(s.profile?.height);
+    const wKg=latest?.weight?parseFloat(latest.weight)/(s.units==="kg"?1:2.205):0;
+    const bf=latest?.bf?parseFloat(latest.bf):0;
+    if(!hM||!wKg||!bf)return null;
+    const leanMassKg=wKg*(1-bf/100);
+    const ffmi=leanMassKg/(hM*hM);
+    const bmi=wKg/(hM*hM);
+    const ffmiRating=ffmi<18?"Below avg":ffmi<20?"Average":ffmi<22?"Fit":ffmi<24?"Athletic":ffmi<26?"Advanced":"Elite";
+    const bmiCat=bmi<18.5?"Underweight":bmi<25?"Normal":bmi<30?"Overweight":"Obese";
+    return{ffmi:ffmi.toFixed(1),ffmiRating,bmi:bmi.toFixed(1),bmiCat,leanMass:leanMassKg.toFixed(1)};
+  })();
+
+  return(
+    <div className="fade-up" style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",gap:8}}>
+        <Btn full onClick={()=>{setForm({...emptyForm,date:td});setShowMeasurements(false);setShow(true);}}>
+          {I.plus({s:16,c:"#060a0e"})} Log Today
+        </Btn>
+        {s.body.find(b=>b.date===ago(1))&&(
+          <Btn v="secondary" onClick={()=>{const yd=s.body.find(b=>b.date===ago(1));if(yd){setForm({date:td,weight:yd.weight?.toString()||"",bf:yd.bf?.toString()||"",waist:yd.waist?.toString()||"",hips:yd.hips?.toString()||"",chest:yd.chest?.toString()||"",neck:yd.neck?.toString()||"",arms:yd.arms?.toString()||"",thighs:yd.thighs?.toString()||"",calves:yd.calves?.toString()||""});setShow(true);}}} s={{flexShrink:0,fontSize:11}}>
+            {I.copy({s:14,c:V.text2})} Yesterday
+          </Btn>
+        )}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div style={{gridColumn:"1/-1"}}>
+          <Stat icon={I.scale} label="Weight" value={latest?.weight?parseFloat(latest.weight).toFixed(1):"—"} unit={wUnit(s.units)} color={V.purple}
+            sub={wc!==0?`${wc>0?"↗ +":"↘ "}${wc.toFixed(1)} ${wUnit(s.units)}`:latest?"→ stable":undefined}/>
+          {s.goals?.goalWeight&&latest?.weight&&(()=>{
+            const cur=parseFloat(latest.weight)||0,goal=parseFloat(s.goals.goalWeight)||0;
+            const start=s.body.slice(-1)[0]?.weight?parseFloat(s.body.slice(-1)[0].weight)||cur:cur;
+            if(!goal)return null;
+            const losing=goal<start,total=Math.abs(start-goal),done=Math.abs(cur-start);
+            const pct=total>0?Math.min(100,Math.round(done/total*100)):0;
+            const remaining=Math.abs(goal-cur).toFixed(1);
+            return(
+              <div style={{marginTop:6,padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,0.02)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:9,color:V.text3}}>Goal: {goal}{wUnit(s.units)}</span>
+                  <span style={{fontSize:9,fontWeight:700,color:V.accent}}>{pct}% there · {remaining}{wUnit(s.units)} to go</span>
+                </div>
+                <div style={{height:5,borderRadius:3,background:"rgba(255,255,255,0.06)"}}>
+                  <div style={{height:5,borderRadius:3,width:`${pct}%`,background:losing?"linear-gradient(90deg,#f43f5e,#f97316)":"linear-gradient(90deg,#22c55e,#86efac)",transition:"width .5s"}}/>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+        <Stat icon={I.target} label="Body Fat" value={latest?.bf?parseFloat(latest.bf).toFixed(1):"—"} unit="%" color={V.danger}/>
+        <Stat icon={I.flame} label="Lean Mass" value={latest?.bf&&latest?.weight?(parseFloat(latest.weight)*(1-(parseFloat(latest.bf)||0)/100)).toFixed(1):"—"} unit={wUnit(s.units)} color={V.accent}/>
+      </div>
+
+      {/* FFMI/BMI card */}
+      {ffmiCard&&(
+        <Card style={{padding:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+            {[{l:"FFMI",v:ffmiCard.ffmi,sub:ffmiCard.ffmiRating,c:V.accent},{l:"BMI",v:ffmiCard.bmi,sub:ffmiCard.bmiCat,c:V.accent2},{l:"Lean Mass",v:`${ffmiCard.leanMass}kg`,c:V.purple}].map(m=>(
+              <div key={m.l} style={{textAlign:"center",padding:"10px 0",borderRadius:8,background:"rgba(255,255,255,0.02)"}}>
+                <div style={{fontSize:10,color:V.text3,fontWeight:600,marginBottom:2}}>{m.l}</div>
+                <div style={{fontSize:18,fontWeight:800,color:m.c,fontFamily:V.mono}}>{m.v}</div>
+                {m.sub&&<div style={{fontSize:9,color:V.text3,marginTop:2}}>{m.sub}</div>}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* 7-day avg weight */}
+      {s.body.length>=3&&(()=>{
+        const last7=s.body.filter(b=>b.date>=ago(7)&&parseFloat(b.weight)>0);
+        const last14=s.body.filter(b=>b.date>=ago(14)&&b.date<ago(7)&&parseFloat(b.weight)>0);
+        const avg7=last7.length?last7.reduce((a,b)=>a+parseFloat(b.weight),0)/last7.length:0;
+        const avg14=last14.length?last14.reduce((a,b)=>a+parseFloat(b.weight),0)/last14.length:0;
+        const diff=avg7&&avg14?avg7-avg14:0;
+        if(!avg7)return null;
+        return(
+          <Card style={{padding:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:V.text3}}>7-DAY AVERAGE</div>
+                <div style={{fontSize:20,fontWeight:800,color:V.purple,fontFamily:V.mono}}>{avg7.toFixed(1)} <span style={{fontSize:10,color:V.text3}}>{wUnit(s.units)}</span></div>
+              </div>
+              {diff!==0&&<div style={{textAlign:"right"}}>
+                <div style={{fontSize:9,color:V.text3}}>vs prior week</div>
+                <div style={{fontSize:14,fontWeight:700,color:diff>0?V.warn:V.accent,fontFamily:V.mono}}>{diff>0?"+":""}{diff.toFixed(1)}</div>
+              </div>}
+            </div>
+          </Card>
+        );
+      })()}
+
+      {/* Weight trend chart */}
+      {trend.length>=2&&(
+        <Card>
+          <div style={{fontSize:10,fontWeight:700,color:V.text3,marginBottom:10,textTransform:"uppercase",letterSpacing:".06em"}}>60-Day Trend</div>
+          <ResponsiveContainer width="100%" height={130}>
+            <LineChart data={trend}>
+              <CartesianGrid {...chartCfg.grid} vertical={false}/>
+              <XAxis dataKey="date" {...chartCfg.axis} interval="preserveStartEnd"/>
+              <YAxis {...chartCfg.axis} width={32} domain={["auto","auto"]}/>
+              <Tooltip {...chartCfg.tip}/>
+              <Line type="monotone" dataKey="wt" stroke={V.purple} strokeWidth={2} dot={false} name="Weight"/>
+            </LineChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
+
+      {/* Body log sheet */}
+      {show&&(
+        <Sheet title="Log Body Metrics" onClose={()=>setShow(false)}
+          footer={<Btn full onClick={save}>{I.check({s:16,c:"#060a0e"})} Save Log</Btn>}>
+          <Field label="Date" type="date" value={form.date} onChange={v=>setForm(f=>({...f,date:v}))}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <Field label={`Weight (${wUnit(s.units)})`} type="number" value={form.weight} onChange={v=>setForm(f=>({...f,weight:v}))} step="0.1"/>
+            <Field label="Body Fat %" type="number" value={form.bf} onChange={v=>setForm(f=>({...f,bf:v}))} unit="%" step="0.1"/>
+          </div>
+          <button onClick={()=>setShowMeasurements(m=>!m)} style={{width:"100%",padding:"10px",borderRadius:10,background:"rgba(255,255,255,0.02)",border:`1px dashed ${V.cardBorder}`,cursor:"pointer",fontSize:12,color:V.text3,fontFamily:V.font,marginBottom:12}}>
+            {showMeasurements?"Hide":"+ Add"} Measurements (optional)
+          </button>
+          {showMeasurements&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {[{k:"waist",l:"Waist"},{k:"hips",l:"Hips"},{k:"chest",l:"Chest"},{k:"neck",l:"Neck"},{k:"arms",l:"Arms"},{k:"thighs",l:"Thighs"},{k:"calves",l:"Calves"}].map(f=>(
+                <Field key={f.k} label={`${f.l} (in)`} type="number" value={form[f.k]} onChange={v=>setForm(p=>({...p,[f.k]:v}))} step="0.25"/>
+              ))}
+            </div>
+          )}
+        </Sheet>
+      )}
+
+      {/* History */}
+      {s.body.slice(0,10).map(m=>(
+        <Card key={m.id} style={{padding:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:12,color:V.text2}}>{fmtFull(m.date)}</span>
+            <button aria-label={`Delete body log for ${fmtFull(m.date)}`} onClick={()=>ConfirmCtrl.show("Delete body log?",fmtFull(m.date),()=>{const deleted=m;d({type:"DEL_B",id:m.id});UndoMgr.show("Body log deleted",()=>d({type:"ADD_B",b:deleted}),V.danger);})} style={{background:"none",border:"none",padding:4,cursor:"pointer"}}>{I.trash({s:13,c:V.text3})}</button>
+          </div>
+          <div style={{display:"flex",gap:16,marginTop:6}}>
+            <span style={{fontSize:16,fontWeight:700,color:V.purple,fontFamily:V.mono}}>{(parseFloat(m.weight)||0).toFixed(1)}<span style={{fontSize:10,color:V.text3}}>{wUnit(s.units)}</span></span>
+            {m.bf>0&&<span style={{fontSize:14,color:V.danger,fontFamily:V.mono}}>{(parseFloat(m.bf)||0).toFixed(1)}<span style={{fontSize:10,color:V.text3}}>%bf</span></span>}
+          </div>
+          {(m.waist>0||m.chest>0||m.arms>0)&&(
+            <div style={{display:"flex",gap:10,marginTop:4,fontSize:10,color:V.text3,fontFamily:V.mono}}>
+              {m.waist>0&&<span>W:{m.waist}"</span>}
+              {m.chest>0&&<span>Ch:{m.chest}"</span>}
+              {m.arms>0&&<span>Ar:{m.arms}"</span>}
+            </div>
+          )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ─── TRENDS TAB ───
+function TrendsTab({s}){
+  const [range,setRange]=useState(30);
+  const macroChart=useMemo(()=>s.nutrition.filter(n=>n.date>=ago(range)).sort((a,b)=>a.date.localeCompare(b.date)).map(n=>({date:fmtShort(n.date),P:n.protein,C:n.carbs,F:n.fat})),[s.nutrition,range]);
+  const calChart=useMemo(()=>s.nutrition.filter(n=>n.date>=ago(range)).sort((a,b)=>a.date.localeCompare(b.date)).map(n=>({date:fmtShort(n.date),cal:n.cal})),[s.nutrition,range]);
+  const week=s.nutrition.filter(n=>n.date>=ago(7));
+  const avgCal=week.length?Math.round(week.reduce((s,n)=>s+n.cal,0)/week.length):0;
+  const avgProt=week.length?Math.round(week.reduce((s,n)=>s+n.protein,0)/week.length):0;
+  const protGoal=s.goals?.protein||180;
+  const protHitDays=week.filter(n=>n.protein>=protGoal*0.9).length;
+  const protHitRate=week.length?Math.round(protHitDays/week.length*100):0;
+
+  // DOW protein analysis
+  const dowData=useMemo(()=>{
+    const dayNames=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    return Array.from({length:7},(_,dow)=>{
+      const entries=s.nutrition.filter(n=>{const d=new Date(n.date+"T12:00:00");return d.getDay()===dow&&n.date>=ago(27);});
+      return{dow,name:dayNames[dow],count:entries.length,protHit:entries.filter(n=>n.protein>=protGoal*0.9).length,avgProt:entries.length?Math.round(entries.reduce((a,n)=>a+(n.protein||0),0)/entries.length):0};
+    });
+  },[s.nutrition,protGoal]);
+
+  const insights=useMemo(()=>{
+    const calGoal=s.goals?.cal||2200;
+    const ins=[];
+    const weakDays=dowData.filter(d=>d.count>=2&&d.protHit/d.count<0.5).map(d=>d.name);
+    const strongDays=dowData.filter(d=>d.count>=2&&d.protHit/d.count>=0.85).map(d=>d.name);
+    const thisW=s.nutrition.filter(n=>n.date>=ago(6)).length;
+    const lastW=s.nutrition.filter(n=>n.date>=ago(13)&&n.date<ago(6)).length;
+    const under=s.nutrition.filter(n=>n.date>=ago(13)&&n.cal>0&&n.cal<calGoal*0.75).length;
+    if(weakDays.length>0)ins.push({icon:"⚠️",color:V.warn,text:`Protein gap on ${weakDays.slice(0,2).join(" & ")} — plan ahead`});
+    if(strongDays.length>0)ins.push({icon:"💪",color:V.accent,text:`Nailing protein on ${strongDays.slice(0,2).join(" & ")} — keep it up`});
+    if(thisW>lastW)ins.push({icon:"📈",color:V.accent,text:`${thisW} days logged this week vs ${lastW} last — consistency building`});
+    else if(thisW<lastW&&lastW>=4)ins.push({icon:"📉",color:V.warn,text:`${lastW-thisW} fewer logs than last week`});
+    if(under>=4)ins.push({icon:"🔋",color:V.danger,text:`Under-fuelling ${under} days lately — calories too low`});
+    return ins;
+  },[s.nutrition,dowData,s.goals]);
+
+  if(s.nutrition.length<3)return(
+    <div className="fade-up" style={{textAlign:"center",padding:"60px 20px",color:V.text3}}>
+      <div style={{fontSize:48,marginBottom:12}}>📊</div>
+      <div style={{fontSize:16,fontWeight:600,color:V.text2,marginBottom:6}}>Not enough data yet</div>
+      <div style={{fontSize:13}}>Log at least 3 days to see trends</div>
+    </div>
+  );
+
+  return(
+    <div className="fade-up" style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",gap:6}}>
+        {[7,14,30,60].map(r=><Chip key={r} label={`${r}d`} active={range===r} onClick={()=>setRange(r)}/>)}
+      </div>
+
+      {/* Quick stats */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Stat icon={I.flame} label="Avg Calories (7d)" value={avgCal} unit="kcal" color={V.warn}/>
+        <Stat icon={I.target} label="Avg Protein (7d)" value={avgProt} unit="g" color={V.accent} sub={week.length?`${protHitDays}/${week.length}d hit goal`:undefined}/>
+      </div>
+
+      {/* Protein hit rate bar */}
+      <Card style={{padding:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+          <span style={{fontSize:10,color:V.text3,fontWeight:700,textTransform:"uppercase",letterSpacing:".06em"}}>Protein Goal Rate (7d)</span>
+          <span style={{fontSize:12,fontWeight:800,color:protHitRate>=80?"#22c55e":protHitRate>=50?V.warn:"#f43f5e",fontFamily:V.mono}}>{protHitRate}%</span>
+        </div>
+        <div style={{height:8,borderRadius:4,background:"rgba(255,255,255,0.06)"}}>
+          <div style={{height:"100%",borderRadius:4,transition:"width .5s",width:`${protHitRate}%`,background:protHitRate>=80?"linear-gradient(90deg,#22c55e,#86efac)":protHitRate>=50?"linear-gradient(90deg,#f59e0b,#fcd34d)":"linear-gradient(90deg,#f43f5e,#fb7185)"}}/>
+        </div>
+      </Card>
+
+      {/* DOW Heatmap */}
+      {s.nutrition.length>=7&&(
+        <Card style={{padding:12}}>
+          <div style={{fontSize:10,fontWeight:700,color:V.text3,textTransform:"uppercase",letterSpacing:".06em",marginBottom:10}}>Day-of-Week Protein Pattern (28d)</div>
+          <div style={{display:"flex",gap:4}}>
+            {dowData.map(d=>{
+              const rate=d.count>0?d.protHit/d.count:null;
+              const bg=rate===null?"rgba(255,255,255,0.04)":rate>=0.85?"rgba(74,222,128,0.35)":rate>=0.5?"rgba(251,146,60,0.35)":"rgba(244,63,94,0.25)";
+              return(
+                <div key={d.dow} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                  <div style={{width:"100%",height:24,borderRadius:4,background:bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    {d.count>0&&<span style={{fontSize:7,fontWeight:700,color:"rgba(255,255,255,0.5)"}}>{d.avgProt}g</span>}
+                  </div>
+                  <span style={{fontSize:7,color:V.text3}}>{d.name.slice(0,2)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* Insights */}
+      {insights.length>0&&(
+        <Card style={{padding:14}}>
+          <div style={{fontSize:10,fontWeight:700,color:V.text3,textTransform:"uppercase",letterSpacing:".06em",marginBottom:10}}>📊 Patterns</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {insights.map((ins,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,0.02)"}}>
+                <span style={{fontSize:14,flexShrink:0}}>{ins.icon}</span>
+                <span style={{fontSize:12,color:V.text2,lineHeight:1.5}}>{ins.text}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Macro stacked bar */}
+      {macroChart.length>1&&(
+        <Card>
+          <div style={{fontSize:10,fontWeight:700,color:V.text3,marginBottom:10,textTransform:"uppercase",letterSpacing:".06em"}}>Macro Breakdown ({range}d)</div>
+          <ResponsiveContainer width="100%" height={150}>
+            <BarChart data={macroChart} barSize={8}>
+              <CartesianGrid {...chartCfg.grid} vertical={false}/>
+              <XAxis dataKey="date" {...chartCfg.axis} interval="preserveStartEnd"/>
+              <YAxis {...chartCfg.axis} width={28}/>
+              <Tooltip {...chartCfg.tip}/>
+              <Bar dataKey="P" stackId="a" fill={V.accent} name="Protein"/>
+              <Bar dataKey="C" stackId="a" fill={V.accent2} name="Carbs"/>
+              <Bar dataKey="F" stackId="a" fill={V.warn} radius={[3,3,0,0]} name="Fat"/>
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
+
+      {/* Calorie line chart */}
+      {calChart.length>1&&(
+        <Card>
+          <div style={{fontSize:10,fontWeight:700,color:V.text3,marginBottom:10,textTransform:"uppercase",letterSpacing:".06em"}}>Calorie Trend ({range}d)</div>
+          <ResponsiveContainer width="100%" height={130}>
+            <LineChart data={calChart}>
+              <CartesianGrid {...chartCfg.grid} vertical={false}/>
+              <XAxis dataKey="date" {...chartCfg.axis} interval="preserveStartEnd"/>
+              <YAxis {...chartCfg.axis} width={36} domain={[0,"auto"]}/>
+              <Tooltip {...chartCfg.tip}/>
+              <ReferenceLine y={s.goals?.cal||2200} stroke={V.accent} strokeDasharray="4 4" strokeWidth={1}/>
+              <Line type="monotone" dataKey="cal" stroke={V.warn} strokeWidth={2} dot={false} name="Calories"/>
+            </LineChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── SETTINGS TAB ───
+function SettingsTab({s,d,installPrompt,onInstalled}){
+  const [goals,setGoals]=useState(s.goals);
+  const [profile,setProfile]=useState(s.profile);
+  const [open,setOpen]=useState(null);
+  const [saved,setSaved]=useState(false);
+  const toggle=(id)=>setOpen(o=>o===id?null:id);
+  useEffect(()=>setGoals(s.goals),[s.goals]);
+  useEffect(()=>setProfile(s.profile),[s.profile]);
+
+  const saveGoals=()=>{
+    d({type:"GOALS",g:{cal:parseInt(goals.cal)||2200,protein:parseInt(goals.protein)||180,carbs:parseInt(goals.carbs)||220,fat:parseInt(goals.fat)||65,goalWeight:parseFloat(goals.goalWeight)||0,tdee:parseInt(goals.tdee)||0,fiber:parseInt(goals.fiber)||25}});
+    setSaved(true);setTimeout(()=>setSaved(false),2000);Toast.show("Goals saved",V.accent);
+  };
+
+  const saveProfile=()=>{
+    d({type:"PROFILE",p:profile});Toast.show("Profile saved",V.accent);
+  };
+
+  const applyPreset=(key)=>{
+    const p=MACRO_PRESETS[key];
+    setGoals(g=>({...g,cal:p.cal,protein:p.protein,carbs:p.carbs,fat:p.fat}));
+    Toast.show(`${p.icon} ${key} preset applied`,V.accent);
+  };
+
+  const logout=async()=>{
+    await SessionManager.revoke();
+    LS.set("ft-onb",false);LS.set("nl-onb",false);
+    window.location.reload();
+  };
+
+  const Row=({id,icon,label,desc,children})=>(
+    <div style={{background:V.card,border:`1px solid ${V.cardBorder}`,borderRadius:14,overflow:"hidden",marginBottom:8}}>
+      <button onClick={()=>toggle(id)} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",width:"100%",background:"none",border:"none",cursor:"pointer",textAlign:"left",WebkitTapHighlightColor:"transparent"}}>
+        <div style={{width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{icon}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:600,color:V.text}}>{label}</div>
+          {desc&&<div style={{fontSize:11,color:V.text3,marginTop:1}}>{desc}</div>}
+        </div>
+        <div style={{transition:"transform .2s",transform:open===id?"rotate(90deg)":"none"}}>{I.chevRight({s:16,c:V.text3})}</div>
+      </button>
+      {open===id&&(
+        <div style={{padding:"0 16px 16px",borderTop:`1px solid ${V.cardBorder}`}}>
+          <div style={{paddingTop:12}}>{children}</div>
+        </div>
+      )}
+    </div>
+  );
+
+  return(
+    <div className="fade-up" style={{display:"flex",flexDirection:"column",gap:0}}>
+      {/* Macro presets */}
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:10,fontWeight:700,color:V.text3,marginBottom:8,letterSpacing:".06em"}}>MACRO PRESETS</div>
+        <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,WebkitOverflowScrolling:"touch"}}>
+          {Object.entries(MACRO_PRESETS).map(([key,p])=>(
+            <button key={key} onClick={()=>applyPreset(key)} style={{padding:"8px 12px",borderRadius:10,background:`${V.accent}08`,border:`1px solid ${V.accent}20`,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,WebkitTapHighlightColor:"transparent"}}>
+              <div style={{fontSize:14}}>{p.icon}</div>
+              <div style={{fontSize:10,fontWeight:700,color:V.text,marginTop:2}}>{key}</div>
+              <div style={{fontSize:8,color:V.text3}}>{p.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Row id="goals" icon="🎯" label="Nutrition Goals" desc={`${s.goals.cal} cal · ${s.goals.protein}P`}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <Field label="Calories" type="number" value={goals.cal?.toString()||""} onChange={v=>setGoals(g=>({...g,cal:v}))} unit="kcal"/>
+          <Field label="Protein" type="number" value={goals.protein?.toString()||""} onChange={v=>setGoals(g=>({...g,protein:v}))} unit="g"/>
+          <Field label="Carbs" type="number" value={goals.carbs?.toString()||""} onChange={v=>setGoals(g=>({...g,carbs:v}))} unit="g"/>
+          <Field label="Fat" type="number" value={goals.fat?.toString()||""} onChange={v=>setGoals(g=>({...g,fat:v}))} unit="g"/>
+          <Field label="Fiber" type="number" value={goals.fiber?.toString()||""} onChange={v=>setGoals(g=>({...g,fiber:v}))} unit="g"/>
+          <Field label="Goal Weight" type="number" value={goals.goalWeight?.toString()||""} onChange={v=>setGoals(g=>({...g,goalWeight:v}))} unit={wUnit(s.units)}/>
+        </div>
+        <Field label="TDEE (for surplus/deficit calc)" type="number" value={goals.tdee?.toString()||""} onChange={v=>setGoals(g=>({...g,tdee:v}))} unit="kcal" placeholder="Optional"/>
+        <Btn full onClick={saveGoals} s={{marginTop:8}}>{saved?"✓ Saved":"Save Goals"}</Btn>
+      </Row>
+
+      <Row id="profile" icon="👤" label="Profile" desc={profile.firstName||"Not set"}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <Field label="First Name" value={profile.firstName||""} onChange={v=>setProfile(p=>({...p,firstName:v}))}/>
+          <Field label="Last Name" value={profile.lastName||""} onChange={v=>setProfile(p=>({...p,lastName:v}))}/>
+        </div>
+        <Field label={"Height (e.g. 5'10\")"} value={profile.height||""} onChange={v=>setProfile(p=>({...p,height:v}))}/>
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:11,color:V.text3,textTransform:"uppercase",letterSpacing:".08em",marginBottom:6,fontWeight:600}}>Sex</div>
+          <div style={{display:"flex",gap:8}}>
+            {["Male","Female","Other"].map(sex=>(
+              <button key={sex} onClick={()=>setProfile(p=>({...p,sex}))} style={{flex:1,padding:"10px",borderRadius:10,border:`1px solid ${profile.sex===sex?V.accent:V.cardBorder}`,background:profile.sex===sex?`${V.accent}12`:"transparent",color:profile.sex===sex?V.accent:V.text3,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                {sex}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:11,color:V.text3,textTransform:"uppercase",letterSpacing:".08em",marginBottom:6,fontWeight:600}}>Units</div>
+          <div style={{display:"flex",gap:8}}>
+            {["lbs","kg"].map(u=>(
+              <button key={u} onClick={()=>d({type:"UNITS",units:u})} style={{flex:1,padding:"10px",borderRadius:10,border:`1px solid ${s.units===u?V.accent:V.cardBorder}`,background:s.units===u?`${V.accent}12`:"transparent",color:s.units===u?V.accent:V.text3,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                {u}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Btn full onClick={saveProfile}>Save Profile</Btn>
+      </Row>
+
+      {installPrompt&&(
+        <div style={{padding:"14px 16px",borderRadius:14,background:`linear-gradient(135deg,${V.accent}10,${V.accent2}08)`,border:`1.5px solid ${V.accent}30`,marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:24}}>📲</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:14,fontWeight:700,color:V.text}}>Install NutritionLog</div>
+            <div style={{fontSize:11,color:V.text3}}>Add to home screen for the best experience</div>
+          </div>
+          <button onClick={async()=>{installPrompt.prompt();const r=await installPrompt.userChoice;if(r.outcome==="accepted"){onInstalled();Toast.show("App installed!",V.accent);}}} style={{padding:"8px 16px",borderRadius:10,background:V.accent,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,color:"#060a0e",fontFamily:V.font,flexShrink:0}}>Install</button>
+        </div>
+      )}
+
+      <Row id="appearance" icon="🎨" label="Appearance" desc={V.mode==="dark"?"Dark mode":"Light mode"}>
+        <div style={{display:"flex",gap:8}}>
+          {["dark","light"].map(m=>(
+            <button key={m} onClick={()=>{setTheme(m);window.location.reload();}} style={{flex:1,padding:"12px",borderRadius:10,border:`1px solid ${V.mode===m?V.accent:V.cardBorder}`,background:V.mode===m?`${V.accent}12`:"transparent",color:V.mode===m?V.accent:V.text3,fontSize:13,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>
+              {m==="dark"?"🌙 Dark":"☀️ Light"}
+            </button>
+          ))}
+        </div>
+        <div style={{fontSize:10,color:V.text3,marginTop:8}}>App will reload to apply theme</div>
+      </Row>
+
+      <Row id="account" icon="🔐" label="Account" desc={LS.get("ft-session-email")||"Not signed in"}>
+        <div style={{fontSize:13,color:V.text2,marginBottom:12,lineHeight:1.5}}>
+          <strong style={{color:V.text}}>NutritionLog</strong> syncs with your IronLog account. Same data, same login — nutrition and body metrics are shared between apps.
+        </div>
+        <div style={{padding:"10px 12px",borderRadius:10,background:"rgba(255,255,255,0.02)",marginBottom:12}}>
+          <div style={{fontSize:10,color:V.text3,marginBottom:2}}>Signed in as</div>
+          <div style={{fontSize:13,fontWeight:600,color:V.text}}>{LS.get("ft-session-email")||"—"}</div>
+        </div>
+        <a href="https://ironlog.space" target="_blank" rel="noopener" style={{display:"block",width:"100%",padding:"12px",borderRadius:10,border:`1px solid ${V.accent}30`,background:`${V.accent}08`,color:V.accent,fontSize:13,fontWeight:600,textAlign:"center",textDecoration:"none",marginBottom:10,boxSizing:"border-box"}}>
+          Open IronLog (full app) ↗
+        </a>
+        <Btn v="danger" full onClick={logout}>Sign Out</Btn>
+      </Row>
+
+      <Row id="data" icon="💾" label="Data" desc="Export, import, or clear your logs">
+        <Btn v="secondary" full onClick={()=>{
+          const data={nutrition:s.nutrition,body:s.body,goals:s.goals,units:s.units,profile:s.profile,exportedAt:new Date().toISOString()};
+          const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+          const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`nutritionlog-export-${today()}.json`;a.click();URL.revokeObjectURL(url);
+          Toast.show("Export downloaded",V.accent);
+        }} s={{marginBottom:8}}>Export Data (JSON)</Btn>
+        <Btn v="secondary" full onClick={()=>{
+          const inp=document.createElement("input");inp.type="file";inp.accept=".json";
+          inp.onchange=(e)=>{
+            const file=e.target.files?.[0];if(!file)return;
+            const reader=new FileReader();
+            reader.onload=(ev)=>{
+              try{
+                const data=JSON.parse(ev.target.result);
+                if(!data.nutrition&&!data.body){Toast.show("Invalid file format",V.danger);return;}
+                ConfirmCtrl.show("Import data?",`This will merge ${(data.nutrition||[]).length} nutrition logs and ${(data.body||[]).length} body logs with your existing data.`,()=>{
+                  const mergedN=[...s.nutrition];
+                  (data.nutrition||[]).forEach(n=>{if(!mergedN.find(e=>e.id===n.id))mergedN.push(n);});
+                  const mergedB=[...s.body];
+                  (data.body||[]).forEach(b=>{if(!mergedB.find(e=>e.id===b.id))mergedB.push(b);});
+                  d({type:"INIT",p:{...s,nutrition:mergedN.sort((a,b)=>b.date.localeCompare(a.date)),body:mergedB.sort((a,b)=>b.date.localeCompare(a.date))}});
+                  Toast.show("Data imported successfully",V.accent);
+                });
+              }catch(err){Toast.show("Failed to parse file",V.danger);}
+            };
+            reader.readAsText(file);
+          };
+          inp.click();
+        }} s={{marginBottom:8}}>Import Data (JSON)</Btn>
+        <Btn v="danger" full onClick={()=>ConfirmCtrl.show("Clear all nutrition logs?","This cannot be undone.",()=>{
+          d({type:"INIT",p:{...s,nutrition:[],body:[]}});Toast.show("Data cleared",V.danger);
+        })}>Clear All Logs</Btn>
+      </Row>
+    </div>
+  );
+}
+
+// ─── ONBOARDING ───
+function Onboarding({d}){
+  const [step,setStep]=useState(0);
+  const [name,setName]=useState("");
+  const [email,setEmail]=useState("");
+  const [pin,setPin]=useState("");
+  const [confirmPin,setConfirmPin]=useState("");
+  const [pinErr,setPinErr]=useState("");
+  const [goals,setGoals]=useState({cal:"2200",protein:"180",carbs:"220",fat:"65",goalWeight:""});
+  const [units,setUnits]=useState("lbs");
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState("");
+  const [showSignIn,setShowSignIn]=useState(false);
+  const [siEmail,setSiEmail]=useState("");
+  const [siPin,setSiPin]=useState("");
+  const [siLoading,setSiLoading]=useState(false);
+  const [siError,setSiError]=useState("");
+  const [siStep,setSiStep]=useState("email");
+  const [forgotEmail,setForgotEmail]=useState("");
+  const [forgotCode,setForgotCode]=useState("");
+  const [forgotNewPin,setForgotNewPin]=useState("");
+
+  const steps=[
+    {title:"👋 Welcome",subtitle:"Smart macro tracking for everyone"},
+    {title:"🎯 Your Goals",subtitle:"Set your daily targets"},
+    {title:"🔐 Create Account",subtitle:"Sync across devices"},
+  ];
+
+  const finish=async()=>{
+    setPinErr("");
+    if(!email.trim()||!email.includes("@")){setPinErr("Valid email required");return;}
+    if(pin.length<4||pin.length>12){setPinErr("PIN must be 4-12 digits");return;}
+    if(pin!==confirmPin){setPinErr("PINs don't match");return;}
+    setLoading(true);
+    const deviceId=LS.get("ft-device-id")||uid();
+    LS.set("ft-device-id",deviceId);
+    try{
+      const profileData={firstName:name.split(" ")[0]||"",lastName:name.split(" ").slice(1).join(" ")||"",email:email.toLowerCase(),units,split:"Custom",fitnessLevel:"",activityLevel:"",weeklyAvailability:"",height:"",sex:"",state:"",city:"",zipCode:"",primaryGoal:"",nickname:""};
+      const goalData={cal:parseInt(goals.cal)||2200,protein:parseInt(goals.protein)||180,carbs:parseInt(goals.carbs)||220,fat:parseInt(goals.fat)||65,goalWeight:parseFloat(goals.goalWeight)||0,tdee:0,fiber:25};
+      const syncPayload={workouts:[],nutrition:[],body:[],exercises:[],goals:goalData,schedule:{weekly:{0:"Rest",1:"Rest",2:"Rest",3:"Rest",4:"Rest",5:"Rest",6:"Rest"},overrides:{}},units,photos:[],checkins:[],milestones:[],phases:[],injuries:[],profile:profileData,syncPrefs:{workouts:false,nutrition:true,body:true,photos:false,checkins:false,milestones:false}};
+      const r=await fetch(`${SYNC_URL}/api/users`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"signup",email:email.toLowerCase(),pin,deviceId,profile:profileData,...syncPayload})});
+      const j=await r.json();
+      if(!j.success){setError(j.error||"Signup failed");setLoading(false);return;}
+      const sess=await SessionManager.create(email,pin,deviceId);
+      if(!sess.success){setError(sess.error||"Login failed");setLoading(false);return;}
+      LS.set("ft-onb",true);LS.set("nl-onb",true);
+      d({type:"ONBOARD",data:{nutrition:[],body:[],goals:goalData,units,onboarded:true,profile:profileData}});
+    }catch(e){setError("Connection failed. Check your network.");setLoading(false);}
+  };
+
+  const signIn=async()=>{
+    setSiError("");setSiLoading(true);
+    try{
+      const deviceId=LS.get("ft-device-id")||uid();LS.set("ft-device-id",deviceId);
+      const sess=await SessionManager.create(siEmail,siPin,deviceId);
+      if(!sess.success){setSiError(sess.error||"Invalid email or PIN");setSiLoading(false);return;}
+      const pull=await CloudSync.pull(siEmail,deviceId,null);
+      if(pull?.success&&pull?.data){
+        const data=pull.data;
+        LS.set("ft-onb",true);LS.set("nl-onb",true);
+        d({type:"ONBOARD",data:{nutrition:data.nutrition||[],body:data.body||[],goals:data.goals||init.goals,units:data.units||"lbs",profile:data.profile||init.profile,onboarded:true}});
+      }else{
+        LS.set("ft-onb",true);LS.set("nl-onb",true);
+        d({type:"ONBOARD",data:{nutrition:[],body:[],goals:init.goals,units:"lbs",profile:{email:siEmail.toLowerCase()},onboarded:true}});
+      }
+    }catch(e){setSiError("Connection failed. Check your network.");setSiLoading(false);}
+  };
+
+  if(showSignIn)return(
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,background:V.bg}}>
+      <div style={{width:"100%",maxWidth:400}}>
+        <button onClick={()=>{setShowSignIn(false);setSiStep("email");setSiError("");}} style={{background:"none",border:"none",color:V.accent,fontSize:14,fontWeight:600,cursor:"pointer",marginBottom:24,display:"flex",alignItems:"center",gap:4}}>
+          {I.chevLeft({s:18,c:V.accent})} Back
+        </button>
+        <div style={{fontSize:24,fontWeight:800,color:V.text,marginBottom:4}}>
+          {siStep==="forgot"?"Forgot PIN":siStep==="forgot_code"?"Enter Code":siStep==="forgot_newpin"?"New PIN":"Sign In"}
+        </div>
+        <div style={{fontSize:13,color:V.text3,marginBottom:24}}>Use your IronLog account</div>
+        {siError&&<div style={{padding:"10px 14px",borderRadius:10,background:"rgba(244,63,94,0.1)",border:"1px solid rgba(244,63,94,0.2)",color:V.danger,fontSize:13,marginBottom:16}}>{siError}</div>}
+        {siStep==="email"&&(
+          <>
+            <Field label="Email" type="email" value={siEmail} onChange={setSiEmail} placeholder="you@email.com"/>
+            <Field label="PIN (4-12 digits)" type="password" value={siPin} onChange={setSiPin} placeholder="••••"/>
+            <Btn full onClick={signIn} disabled={siLoading||!siEmail||!siPin}>{siLoading?"Signing in...":"Sign In"}</Btn>
+            <button onClick={()=>setSiStep("forgot")} style={{width:"100%",marginTop:12,padding:"10px",background:"none",border:"none",color:V.text3,fontSize:12,cursor:"pointer"}}>Forgot PIN?</button>
+          </>
+        )}
+        {siStep==="forgot"&&(
+          <>
+            <Field label="Email" type="email" value={forgotEmail} onChange={setForgotEmail} placeholder="your@email.com"/>
+            <Btn full onClick={async()=>{setSiLoading(true);const r=await SessionManager.sendResetCode(forgotEmail);setSiLoading(false);if(r?.success)setSiStep("forgot_code");else setSiError(r?.error||"Email not found");}}>
+              {siLoading?"Sending...":"Send Code"}
+            </Btn>
+          </>
+        )}
+        {siStep==="forgot_code"&&(
+          <>
+            <Field label="6-digit Code" type="number" value={forgotCode} onChange={setForgotCode} placeholder="123456"/>
+            <Btn full onClick={async()=>{setSiLoading(true);const r=await SessionManager.verifyResetCode(forgotEmail,forgotCode);setSiLoading(false);if(r?.success)setSiStep("forgot_newpin");else setSiError(r?.error||"Invalid code");}}>
+              {siLoading?"Verifying...":"Verify"}
+            </Btn>
+          </>
+        )}
+        {siStep==="forgot_newpin"&&(
+          <>
+            <Field label="New PIN" type="password" value={forgotNewPin} onChange={setForgotNewPin} placeholder="••••"/>
+            <Btn full onClick={async()=>{setSiLoading(true);const r=await SessionManager.setNewPin(forgotEmail,forgotCode,forgotNewPin);setSiLoading(false);if(r?.success){setSiEmail(forgotEmail);setSiPin(forgotNewPin);setSiStep("email");setSiError("");}else setSiError(r?.error||"Reset failed");}}>
+              {siLoading?"Resetting...":"Reset PIN"}
+            </Btn>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{minHeight:"100vh",background:V.bg,display:"flex",flexDirection:"column"}}>
+      {/* Progress bar */}
+      <div style={{height:3,background:"rgba(255,255,255,0.05)"}}>
+        <div style={{height:"100%",background:`linear-gradient(90deg,${V.accent},${V.accent2})`,width:`${((step+1)/steps.length)*100}%`,transition:"width .3s"}}/>
+      </div>
+
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px 24px max(80px,calc(60px + env(safe-area-inset-bottom,0px)))"}}>
+        <div style={{width:"100%",maxWidth:400}}>
+          {/* Logo */}
+          <div style={{textAlign:"center",marginBottom:32}}>
+            <div style={{fontSize:52,marginBottom:8}}>🥗</div>
+            <div style={{fontSize:28,fontWeight:900,color:V.text}}>NutritionLog</div>
+            <div style={{fontSize:12,color:V.text3,letterSpacing:".1em",fontWeight:600,marginTop:2}}>by IRONLOG</div>
+          </div>
+
+          <div style={{marginBottom:8}}>
+            <div style={{fontSize:22,fontWeight:800,color:V.text}}>{steps[step].title}</div>
+            <div style={{fontSize:13,color:V.text3,marginTop:2}}>{steps[step].subtitle}</div>
+          </div>
+
+          <div style={{marginTop:20}}>
+            {step===0&&(
+              <div>
+                <Field label="Your Name" value={name} onChange={setName} placeholder="First Last" autoFocus/>
+                <div style={{marginBottom:16}}>
+                  <div style={{fontSize:11,color:V.text3,textTransform:"uppercase",letterSpacing:".08em",marginBottom:8,fontWeight:600}}>Units</div>
+                  <div style={{display:"flex",gap:8}}>
+                    {["lbs","kg"].map(u=>(
+                      <button key={u} onClick={()=>setUnits(u)} style={{flex:1,padding:"12px",borderRadius:12,border:`2px solid ${units===u?V.accent:V.cardBorder}`,background:units===u?`${V.accent}12`:"transparent",color:units===u?V.accent:V.text3,fontSize:14,fontWeight:700,cursor:"pointer"}}>
+                        {u}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{padding:"14px 16px",borderRadius:12,background:`${V.accent}06`,border:`1px solid ${V.accent}15`,marginBottom:20}}>
+                  <div style={{fontSize:12,fontWeight:700,color:V.accent,marginBottom:6}}>✓ What you get</div>
+                  <div style={{fontSize:12,color:V.text2,lineHeight:1.7}}>
+                    • 500+ food database with macros{"\n"}• Meal logging with barcode scanner{"\n"}• Body composition tracking{"\n"}• Fast food protein hacks{"\n"}• Free forever — syncs with IronLog
+                  </div>
+                </div>
+                <Btn full onClick={()=>setStep(1)}>Get Started →</Btn>
+                <button onClick={()=>setShowSignIn(true)} style={{width:"100%",marginTop:12,padding:"12px",background:"none",border:`1px solid ${V.cardBorder}`,borderRadius:12,color:V.text3,fontSize:13,cursor:"pointer",fontFamily:V.font}}>
+                  Already have an IronLog account? Sign in
+                </button>
+              </div>
+            )}
+            {step===1&&(
+              <div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+                  {Object.entries(MACRO_PRESETS).map(([key,p])=>(
+                    <button key={key} onClick={()=>{setGoals(g=>({...g,cal:p.cal.toString(),protein:p.protein.toString(),carbs:p.carbs.toString(),fat:p.fat.toString()}));}} style={{padding:"7px 12px",borderRadius:10,background:`${V.accent}08`,border:`1px solid ${V.accent}20`,cursor:"pointer",fontSize:11,color:V.text,fontFamily:V.font,display:"flex",alignItems:"center",gap:4}}>
+                      <span>{p.icon}</span><span>{key}</span>
+                    </button>
+                  ))}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <Field label="Daily Calories" type="number" value={goals.cal} onChange={v=>setGoals(g=>({...g,cal:v}))} unit="kcal"/>
+                  <Field label="Protein" type="number" value={goals.protein} onChange={v=>setGoals(g=>({...g,protein:v}))} unit="g"/>
+                  <Field label="Carbs" type="number" value={goals.carbs} onChange={v=>setGoals(g=>({...g,carbs:v}))} unit="g"/>
+                  <Field label="Fat" type="number" value={goals.fat} onChange={v=>setGoals(g=>({...g,fat:v}))} unit="g"/>
+                </div>
+                <Field label={`Goal Weight (${units})`} type="number" value={goals.goalWeight} onChange={v=>setGoals(g=>({...g,goalWeight:v}))} placeholder="Optional"/>
+                <div style={{display:"flex",gap:8,marginTop:8}}>
+                  <Btn v="secondary" onClick={()=>setStep(0)}>← Back</Btn>
+                  <Btn full onClick={()=>setStep(2)}>Next →</Btn>
+                </div>
+              </div>
+            )}
+            {step===2&&(
+              <div>
+                {error&&<div style={{padding:"10px 14px",borderRadius:10,background:"rgba(244,63,94,0.1)",color:V.danger,fontSize:13,marginBottom:14}}>{error}</div>}
+                {pinErr&&<div style={{padding:"10px 14px",borderRadius:10,background:"rgba(251,146,60,0.1)",color:V.warn,fontSize:13,marginBottom:14}}>{pinErr}</div>}
+                <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="your@email.com"/>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <Field label="PIN (4-12 digits)" type="password" value={pin} onChange={setPin} placeholder="••••"/>
+                  <Field label="Confirm PIN" type="password" value={confirmPin} onChange={setConfirmPin} placeholder="••••"/>
+                </div>
+                <div style={{padding:"10px 14px",borderRadius:10,background:"rgba(255,255,255,0.03)",fontSize:11,color:V.text3,marginBottom:14,lineHeight:1.5}}>
+                  Your data syncs across all your devices and is accessible from IronLog too. Use the same PIN for both apps.
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <Btn v="secondary" onClick={()=>setStep(1)}>← Back</Btn>
+                  <Btn full onClick={finish} disabled={loading}>{loading?"Creating account...":"Create Account"}</Btn>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Debounced cloud sync (canonical) ───
+const debouncedSync=(s)=>CloudSync.debouncedPush(s);
+
+// ─── Error Boundary ───
+class ErrorBoundary extends React.Component{
+  constructor(props){super(props);this.state={hasError:false,error:null};}
+  static getDerivedStateFromError(error){return{hasError:true,error};}
+  render(){
+    if(this.state.hasError){
+      return React.createElement("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",padding:24,textAlign:"center",background:"#060a0e"}},
+        React.createElement("div",{style:{fontSize:48,marginBottom:12}},"⚠️"),
+        React.createElement("div",{style:{fontSize:18,fontWeight:700,color:"#e2e8f0",marginBottom:8}},"Something went wrong"),
+        React.createElement("div",{style:{fontSize:13,color:"#94a3b8",marginBottom:20,maxWidth:300}},this.state.error?.message||"An unexpected error occurred"),
+        React.createElement("button",{onClick:()=>window.location.reload(),style:{padding:"12px 24px",borderRadius:12,border:"none",background:"#4ade80",color:"#060a0e",fontSize:14,fontWeight:600,cursor:"pointer"}},"Reload App")
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ─── APP ───
+function App(){
+  const [s,d]=useReducer(reducer,init);
+
+  const score=useMemo(()=>calcScore(s),[s.nutrition,s.body,s.goals]);
+  const missions=useMemo(()=>getDailyMissions(s),[s.nutrition,s.body,s.goals]);
+  const {celebrating,celebRank,dismiss:dismissLevel}=useLevelUp(score,"nl-last-level");
+  const [online,setOnline]=useState(navigator.onLine);
+  const [installPrompt,setInstallPrompt]=useState(null);
+  useEffect(()=>{
+    const on=()=>setOnline(true);const off=()=>setOnline(false);
+    window.addEventListener("online",on);window.addEventListener("offline",off);
+    const bip=(e)=>{e.preventDefault();setInstallPrompt(e);};
+    window.addEventListener("beforeinstallprompt",bip);
+    return()=>{window.removeEventListener("online",on);window.removeEventListener("offline",off);window.removeEventListener("beforeinstallprompt",bip);};
+  },[]);
+
+  // Handle URL tab param for manifest shortcuts
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);
+    const tab=params.get("tab");
+    if(tab&&["home","log","body","trends","settings"].includes(tab)){d({type:"TAB",tab});}
+  },[]);
+
+  // Load data on boot
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const nutrition=LS.get("ft-n")||[];
+        const body=LS.get("ft-b")||[];
+        const goals=LS.get("ft-g")||init.goals;
+        const units=LS.get("ft-units")||"lbs";
+        const profile=LS.get("ft-profile")||init.profile;
+        const localOnboarded=LS.get("ft-onb")||LS.get("nl-onb")||false;
+
+        // SSO: not onboarded locally but ironlog cookie exists
+        if(!localOnboarded){
+          const ssoToken=Cookie.get("ironlog_session");
+          if(ssoToken){
+            try{
+              const vRes=await fetch(`${SYNC_URL}/api/auth/session`,{method:"POST",headers:{"Content-Type":"application/json","X-Session-Token":ssoToken},body:JSON.stringify({action:"validate"})});
+              const vJson=await vRes.json();
+              if(vJson.valid&&vJson.email){
+                const deviceId=LS.get("ft-device-id")||uid();LS.set("ft-device-id",deviceId);
+                LS.set("ft-session-token",ssoToken);LS.set("ft-session-email",vJson.email);
+                const pull=await CloudSync.pull(vJson.email,deviceId,null);
+                if(pull?.success&&pull?.data){
+                  const data=pull.data;
+                  LS.set("ft-onb",true);LS.set("nl-onb",true);
+                  d({type:"INIT",p:{nutrition:data.nutrition||[],body:data.body||[],goals:data.goals||init.goals,units:data.units||"lbs",profile:data.profile||init.profile,onboarded:true}});
+                  return;
+                }
+              }
+            }catch(e){/* SSO failed silently */}
+          }
+        }
+
+        d({type:"INIT",p:{nutrition,body,goals,units,profile,onboarded:localOnboarded}});
+      }catch(e){d({type:"INIT",p:{...init,onboarded:false}});}
+    })();
+  },[]);
+
+  // Persist to LS on state change
+  useEffect(()=>{
+    if(!s.loaded)return;
+    LS.set("ft-n",s.nutrition);
+    LS.set("ft-b",s.body);
+    LS.set("ft-g",s.goals);
+    LS.set("ft-units",s.units);
+    LS.set("ft-profile",s.profile);
+    LS.set("ft-onb",s.onboarded);
+    LS.set("nl-onb",s.onboarded);
+    // Auto-sync to cloud (debounced)
+    if(s.onboarded&&s.profile?.email){
+      debouncedSync(s);
+    }
+  },[s.nutrition,s.body,s.goals,s.units,s.profile,s.onboarded]);
+
+  if(!s.loaded)return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:16,background:V.bg}}>
+      <div style={{fontSize:40}}>🥗</div>
+      <div style={{fontSize:13,color:V.text3,fontFamily:V.mono,animation:"pulse 1.5s infinite"}}>Loading your data...</div>
+      <div style={{width:180,height:4,borderRadius:2,background:"rgba(255,255,255,0.05)",overflow:"hidden"}}>
+        <div style={{width:"40%",height:"100%",borderRadius:2,background:`linear-gradient(90deg,transparent,${V.accent}40,transparent)`,animation:"shimmer 1.5s infinite"}}/>
+      </div>
+    </div>
+  );
+
+  if(!s.onboarded)return <Onboarding d={d}/>;
+
+  const tabs=[
+    {id:"home",label:"Home",icon:I.home},
+    {id:"log",label:"Log",icon:I.log},
+    {id:"body",label:"Body",icon:I.body},
+    {id:"trends",label:"Trends",icon:I.chart},
+    {id:"settings",label:"Settings",icon:I.settings},
+  ];
+
+  return(
+    <div style={{height:"100%",display:"flex",flexDirection:"column",background:V.bg}}>
+      {/* Header */}
+      <header style={{paddingTop:`max(16px,env(safe-area-inset-top,0px))`,paddingLeft:16,paddingRight:16,paddingBottom:10,background:V.navBg,borderBottom:`1px solid ${V.cardBorder}`,flexShrink:0,backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:22}}>🥗</span>
+            <div>
+              <div style={{fontSize:16,fontWeight:800,color:V.text,lineHeight:1}}>NutritionLog</div>
+              <div style={{fontSize:9,color:V.text3,fontWeight:600,letterSpacing:".1em"}}>by IRONLOG</div>
+            </div>
+          </div>
+          {(()=>{
+            const todayN=s.nutrition.find(n=>n.date===today());
+            const tCal=todayN?.cal||0,calGoal=s.goals?.cal||2200;
+            const remaining=calGoal-tCal;
+            if(!tCal)return null;
+            return(
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:11,fontWeight:800,color:remaining>=0?V.accent:V.danger,fontFamily:V.mono}}>
+                  {Math.abs(remaining)} cal {remaining>=0?"left":"over"}
+                </div>
+                <div style={{fontSize:9,color:V.text3}}>{todayN?.protein||0}g protein today</div>
+              </div>
+            );
+          })()}
+        </div>
+      </header>
+
+      {/* Offline indicator */}
+      {!online&&(
+        <div style={{background:"rgba(251,146,60,0.15)",borderBottom:`1px solid rgba(251,146,60,0.25)`,padding:"6px 16px",textAlign:"center",fontSize:11,fontWeight:600,color:V.warn,flexShrink:0}}>
+          You're offline — changes will sync when reconnected
+        </div>
+      )}
+
+      {/* Content */}
+      <main style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain"}} role="main">
+        <div className="main-scroll" style={{paddingTop:16}}>
+          {s.tab==="home"&&<HomeTab s={s} d={d} score={score} missions={missions}/>}
+          {s.tab==="log"&&<LogTab s={s} d={d}/>}
+          {s.tab==="body"&&<BodyTab s={s} d={d}/>}
+          {s.tab==="trends"&&<TrendsTab s={s}/>}
+          {s.tab==="settings"&&<SettingsTab s={s} d={d} installPrompt={installPrompt} onInstalled={()=>setInstallPrompt(null)}/>}
+        </div>
+      </main>
+
+      {/* Bottom Nav */}
+      <nav className="tab-bar" role="tablist" aria-label="Main navigation" style={{background:V.navBg,borderTop:`1px solid ${V.cardBorder}`,display:"flex",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",flexShrink:0,paddingTop:8}}>
+        {tabs.map(tab=>{
+          const active=s.tab===tab.id;
+          return(
+            <button key={tab.id} onClick={()=>{Haptic.light();d({type:"TAB",tab:tab.id});}} aria-label={tab.label} aria-current={active?"page":undefined} role="tab" style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,background:"none",border:"none",cursor:"pointer",padding:"4px 0",WebkitTapHighlightColor:"transparent",transition:"all .15s"}}>
+              {tab.icon({s:21,c:active?V.accent:V.text3})}
+              <span style={{fontSize:9,fontWeight:active?700:500,color:active?V.accent:V.text3,transition:"color .15s"}}>{tab.label}</span>
+              {active&&<div style={{width:4,height:4,borderRadius:2,background:V.accent,marginTop:-2}}/>}
+            </button>
+          );
+        })}
+      </nav>
+
+      <ToastDisplay/>
+      <GlobalConfirm/>
+      <UndoToastBar/>
+      {celebrating&&celebRank&&<LevelUpCelebration rank={celebRank} onDismiss={dismissLevel}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App/></ErrorBoundary>);
+</script>
+</body>
+</html>
