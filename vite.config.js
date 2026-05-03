@@ -29,6 +29,15 @@ function inlineCssPlugin() {
 export default defineConfig({
   base: './',
   plugins: [react(), inlineCssPlugin()],
-  build: { outDir: 'dist' },
+  build: {
+    outDir: 'dist',
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/index.js',
+        chunkFileNames: 'assets/[name].js',
+        assetFileNames: 'assets/[name][extname]',
+      },
+    },
+  },
   server: { port: 3004 },
 });

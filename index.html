@@ -3,23 +3,26 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes,viewport-fit=cover"/>
+<meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="NutritionLog"/>
 <meta name="theme-color" content="#060a0e"/>
 <meta name="description" content="NutritionLog — Smart macro & calorie tracker. Log meals, track body composition, hit your goals."/>
 <meta name="color-scheme" content="dark light"/>
-<link rel="manifest" href="/manifest.json"/>
-<link rel="icon" type="image/svg+xml" href="/icon.svg"/>
-<link rel="apple-touch-icon" href="/icon.svg"/>
+<link rel="manifest" href="./manifest.json"/>
+<link rel="icon" type="image/svg+xml" href="./icon.svg"/>
+<link rel="apple-touch-icon" href="./icon.svg"/>
 <title>NutritionLog — Smart Macro Tracker</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script>
 try{var _th=localStorage.getItem("nl-theme");if(_th&&JSON.parse(_th)==="light"){document.documentElement.setAttribute("data-theme","light");}}catch(e){}
 </script>
+  <script type="module" crossorigin src="./assets/index.js"></script>
+  <style>*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body,#root{height:100%;width:100%;background:#060a0e;margin:0;padding:0;overflow:hidden;position:fixed;top:0;left:0;right:0;bottom:0}@media(min-width:768px){html,body,#root{position:static;overflow:auto;height:100vh}}@supports (-webkit-touch-callout: none){html,body,#root{height:-webkit-fill-available}}.sheet-head{padding-top:max(16px,env(safe-area-inset-top,0px));padding-bottom:12px;flex-shrink:0}.sheet-footer{padding:14px 20px;padding-bottom:max(20px,env(safe-area-inset-bottom,16px));border-top:1px solid rgba(255,255,255,.06);flex-shrink:0;box-shadow:0 -4px 20px #0006}body{font-family:Outfit,sans-serif;color:#e2e8f0;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch}input,select,button{font-family:inherit}input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}input[type=number]{-moz-appearance:textfield}*:focus-visible{outline:2px solid #4ade80;outline-offset:2px;border-radius:4px}::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#ffffff14;border-radius:3px}@media(min-width:768px){::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#ffffff1f}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{0%,to{opacity:1}50%{opacity:.3}}@keyframes fadeUp{0%{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}@keyframes slideUpSheet{0%{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes shimmer{0%{background-position:-200px 0}to{background-position:200px 0}}.fade-up{animation:fadeUp .35s ease both}#landscape-lock{display:none;position:fixed;top:0;right:0;bottom:0;left:0;background:#060a0e;z-index:99999;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:Outfit,sans-serif}@media(orientation:landscape)and (max-height:500px)and (max-width:1024px){#root{display:none!important}#landscape-lock{display:flex!important}}@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>
 </head>
 <body>
 <div id="root"></div>
-<script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
