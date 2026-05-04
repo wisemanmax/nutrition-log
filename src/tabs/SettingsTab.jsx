@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { V, setTheme } from '../utils/theme';
 import { LS } from '../utils/storage';
-import { Card, Btn, Field, ConfirmCtrl, SuccessToastCtrl } from '../components/ui';
+import { Card, Btn, Field, Sheet, ConfirmCtrl, SuccessToastCtrl } from '../components/ui';
 import { Icons } from '../components/Icons';
 import { SessionManager } from '../utils/auth';
+import { ALLERGENS, DIETARY_MODES } from '../utils/allergens';
+import { RecipeBuilderSheet } from './RecipeBuilderSheet';
 
 export function TOSContent() {
   return (
@@ -27,7 +29,22 @@ export function PrivacyContent() {
 
 export function SettingsTab({ s, d }) {
   const [isDark, setIsDark] = useState(V.mode === "dark");
+  const [editingGoals, setEditingGoals] = useState(false);
+  const [editingRecipe, setEditingRecipe] = useState(null); // null | 'new' | recipe object
+  const [goalDraft, setGoalDraft] = useState({ ...s.goals });
   const email = s.profile?.email || LS.get("ft-session-email");
+
+  const toggleAllergen = (id) => {
+    const current = s.profile?.allergens || [];
+    const next = current.includes(id) ? current.filter(a => a !== id) : [...current, id];
+    d({ type: 'SET_PROFILE', profile: { allergens: next } });
+  };
+
+  const toggleDietaryMode = (id) => {
+    const current = s.profile?.dietaryModes || [];
+    const next = current.includes(id) ? current.filter(m => m !== id) : [...current, id];
+    d({ type: 'SET_PROFILE', profile: { dietaryModes: next } });
+  };
 
   const toggleTheme = () => {
     const mode = isDark ? "light" : "dark";
@@ -99,14 +116,107 @@ export function SettingsTab({ s, d }) {
 
       {/* Goals */}
       <Card style={{ padding: 14 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 10 }}>Daily Goals</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, textTransform: "uppercase", letterSpacing: ".06em" }}>Daily Goals</div>
+          <Btn v="ghost" onClick={() => { setGoalDraft({ ...s.goals }); setEditingGoals(true); }} style={{ padding: '4px 8px', minHeight: 28, fontSize: 11 }}>Edit</Btn>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
           <div><span style={{ color: V.text3 }}>Calories:</span> <span style={{ color: V.warn, fontFamily: V.mono }}>{s.goals?.cal || 2400}</span></div>
           <div><span style={{ color: V.text3 }}>Protein:</span> <span style={{ color: V.accent, fontFamily: V.mono }}>{s.goals?.protein || 180}g</span></div>
           <div><span style={{ color: V.text3 }}>Carbs:</span> <span style={{ color: V.accent2, fontFamily: V.mono }}>{s.goals?.carbs || 250}g</span></div>
           <div><span style={{ color: V.text3 }}>Fat:</span> <span style={{ color: V.warn, fontFamily: V.mono }}>{s.goals?.fat || 70}g</span></div>
+          <div><span style={{ color: V.text3 }}>Fiber:</span> <span style={{ color: V.accent, fontFamily: V.mono }}>{s.goals?.fiber || 25}g</span></div>
+          <div><span style={{ color: V.text3 }}>Water:</span> <span style={{ color: V.accent2, fontFamily: V.mono }}>{s.goals?.water || 8} cups</span></div>
         </div>
       </Card>
+
+      {/* Dietary modes */}
+      <Card style={{ padding: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 10 }}>Dietary Preferences</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {DIETARY_MODES.map(mode => {
+            const active = (s.profile?.dietaryModes || []).includes(mode.id);
+            return (
+              <button key={mode.id} onClick={() => toggleDietaryMode(mode.id)}
+                style={{ padding: '6px 12px', borderRadius: 20, border: `1px solid ${active ? V.accent : V.cardBorder}`,
+                  background: active ? `${V.accent}15` : 'transparent', color: active ? V.accent : V.text3,
+                  fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: V.font }}>
+                {mode.icon} {mode.label}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* Allergens */}
+      <Card style={{ padding: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>Allergen Alerts</div>
+        <div style={{ fontSize: 10, color: V.text3, marginBottom: 10 }}>Foods containing these will be flagged in search</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {ALLERGENS.map(a => {
+            const active = (s.profile?.allergens || []).includes(a.id);
+            return (
+              <button key={a.id} onClick={() => toggleAllergen(a.id)}
+                style={{ padding: '6px 12px', borderRadius: 20, border: `1px solid ${active ? V.danger : V.cardBorder}`,
+                  background: active ? `${V.danger}12` : 'transparent', color: active ? V.danger : V.text3,
+                  fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: V.font }}>
+                {a.icon} {a.label}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* Recipes */}
+      <Card style={{ padding: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, textTransform: "uppercase", letterSpacing: ".06em" }}>My Recipes</div>
+          <Btn v="small" onClick={() => setEditingRecipe('new')}>+ New</Btn>
+        </div>
+        {(s.recipes || []).length === 0 ? (
+          <div style={{ fontSize: 12, color: V.text3, textAlign: 'center', padding: '12px 0' }}>No recipes yet</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {(s.recipes || []).slice(0, 5).map(r => (
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: V.text }}>{r.name}</div>
+                  <div style={{ fontSize: 10, color: V.text3 }}>{r.macros?.perServing?.cal} kcal/serving · {r.servings} servings</div>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => setEditingRecipe(r)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: V.text3, fontSize: 13 }}>✏️</button>
+                  <button onClick={() => ConfirmCtrl.show('Delete Recipe?', r.name, () => d({ type: 'DELETE_RECIPE', id: r.id }))}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: V.danger, fontSize: 13 }}>🗑</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Goals edit sheet */}
+      {editingGoals && (
+        <Sheet title="Edit Daily Goals" onClose={() => setEditingGoals(false)}
+          footer={<div style={{ padding: 16 }}><Btn full onClick={() => { d({ type: 'GOALS', g: { cal: parseInt(goalDraft.cal), protein: parseInt(goalDraft.protein), carbs: parseInt(goalDraft.carbs), fat: parseInt(goalDraft.fat), fiber: parseInt(goalDraft.fiber || 25), water: parseInt(goalDraft.water || 8) } }); setEditingGoals(false); SuccessToastCtrl.show('Goals updated'); }}>Save Goals</Btn></div>}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <Field label="Calories" type="number" value={String(goalDraft.cal || '')} onChange={v => setGoalDraft(g => ({...g, cal: v}))} inputMode="numeric" unit="kcal" />
+            <Field label="Protein" type="number" value={String(goalDraft.protein || '')} onChange={v => setGoalDraft(g => ({...g, protein: v}))} inputMode="numeric" unit="g" />
+            <Field label="Carbs" type="number" value={String(goalDraft.carbs || '')} onChange={v => setGoalDraft(g => ({...g, carbs: v}))} inputMode="numeric" unit="g" />
+            <Field label="Fat" type="number" value={String(goalDraft.fat || '')} onChange={v => setGoalDraft(g => ({...g, fat: v}))} inputMode="numeric" unit="g" />
+            <Field label="Fiber" type="number" value={String(goalDraft.fiber || '')} onChange={v => setGoalDraft(g => ({...g, fiber: v}))} inputMode="numeric" unit="g" />
+            <Field label="Water" type="number" value={String(goalDraft.water || '')} onChange={v => setGoalDraft(g => ({...g, water: v}))} inputMode="numeric" unit="cups" />
+          </div>
+        </Sheet>
+      )}
+
+      {/* Recipe builder sheet */}
+      {editingRecipe && (
+        <RecipeBuilderSheet
+          existing={editingRecipe !== 'new' ? editingRecipe : undefined}
+          onSave={(recipe) => d({ type: 'SAVE_RECIPE', recipe })}
+          onClose={() => setEditingRecipe(null)}
+        />
+      )}
 
       {/* Units */}
       <Card style={{ padding: 14 }}>

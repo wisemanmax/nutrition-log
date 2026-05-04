@@ -3,6 +3,8 @@ import { V, Haptic } from '../utils/theme';
 import { LS } from '../utils/storage';
 import { Card, Btn, Progress, Stat } from '../components/ui';
 import { Icons } from '../components/Icons';
+import { FastingTimer } from '../components/FastingTimer';
+import { MoodLogger } from '../components/MoodLogger';
 import { today, ago } from '../utils/helpers';
 
 // --- Macro Ring ---
@@ -43,7 +45,8 @@ export function HomeTab({ s, d }) {
   const calRemaining = calGoal - tCal;
   const todayMeals = Array.isArray(todayN?.meals) ? todayN.meals : [];
 
-  const [waterCount, setWaterCount] = useState(() => parseInt(LS.get("nl-water-" + today())) || 0);
+  const waterCount = s.water?.[td] ?? parseInt(LS.get("nl-water-" + today())) ?? 0;
+  const setWaterCount = (n) => { d({ type: 'SET_WATER', date: td, count: n }); LS.set("nl-water-" + td, n); };
 
   const name = s.profile?.firstName || "";
   const hour = new Date().getHours();
@@ -182,6 +185,12 @@ export function HomeTab({ s, d }) {
           </div>
         </Card>
       )}
+
+      {/* Fasting timer */}
+      <FastingTimer fasting={s.fasting} d={d} />
+
+      {/* Mood check-in */}
+      <MoodLogger todayMood={s.mood?.[td]} d={d} />
 
       {/* Empty state */}
       {s.nutrition.length === 0 && (

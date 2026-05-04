@@ -125,3 +125,52 @@ input[type=number] {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* --- Accessibility: Screen reader only --- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Accessibility: Skip to main content --- */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 16px;
+  z-index: 99999;
+  padding: 8px 16px;
+  background: #4ade80;
+  color: #060a0e;
+  font-weight: 700;
+  font-size: 14px;
+  border-radius: 0 0 8px 8px;
+  text-decoration: none;
+  transition: top 0.2s;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+/* --- Accessibility: High contrast focus ring --- */
+@media (forced-colors: active) {
+  *:focus-visible {
+    outline: 3px solid ButtonText;
+  }
+}
+
+/* --- Accessibility: Touch target minimum 44x44px --- */
+button, a[role="button"], [role="tab"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+button[style*="width: 32px"], button[style*="width:32px"] {
+  min-height: 32px; /* allow small utility buttons */
+  min-width: 32px;
+}

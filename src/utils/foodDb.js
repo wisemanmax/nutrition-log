@@ -1,0 +1,258 @@
+import { openDB } from 'idb';
+
+const DB_NAME = 'nutrition-log-foods';
+const DB_VERSION = 1;
+const STORE = 'foods';
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+const USDA_API_KEY = 'DEMO_KEY'; // Replace with real key; DEMO_KEY allows 30 req/hr
+const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1';
+const OFF_BASE = 'https://world.openfoodfacts.org/api/v2';
+
+// ─── IndexedDB setup ─────────────────────────────────────────────────────────
+
+let _dbPromise = null;
+function getDb() {
+  if (!_dbPromise) {
+    _dbPromise = openDB(DB_NAME, DB_VERSION, {
+      upgrade(db) {
+        const store = db.createObjectStore(STORE, { keyPath: 'id' });
+        store.createIndex('query', 'query');
+        store.createIndex('barcode', 'barcode');
+        store.createIndex('cachedAt', 'cachedAt');
+      },
+    });
+  }
+  return _dbPromise;
+}
+
+async function cacheGet(id) {
+  try {
+    const db = await getDb();
+    const item = await db.get(STORE, id);
+    if (!item) return null;
+    if (Date.now() - item.cachedAt > CACHE_TTL_MS) return null;
+    return item;
+  } catch { return null; }
+}
+
+async function cacheSet(item) {
+  try {
+    const db = await getDb();
+    await db.put(STORE, { ...item, cachedAt: Date.now() });
+  } catch { /* ignore */ }
+}
+
+async function cacheEvict() {
+  try {
+    const db = await getDb();
+    const tx = db.transaction(STORE, 'readwrite');
+    const index = tx.store.index('cachedAt');
+    const cutoff = Date.now() - CACHE_TTL_MS;
+    let cursor = await index.openCursor();
+    while (cursor) {
+      if (cursor.value.cachedAt < cutoff) await cursor.delete();
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+  } catch { /* ignore */ }
+}
+
+// ─── USDA FoodData Central ────────────────────────────────────────────────────
+
+function normalizeUsda(food) {
+  const nutrients = {};
+  (food.foodNutrients || []).forEach(n => {
+    const name = n.nutrientName?.toLowerCase() || '';
+    const val = n.value || 0;
+    if (name.includes('energy') && name.includes('kcal')) nutrients.cal = Math.round(val);
+    else if (name === 'protein') nutrients.protein = Math.round(val * 10) / 10;
+    else if (name.includes('carbohydrate')) nutrients.carbs = Math.round(val * 10) / 10;
+    else if (name.includes('total lipid') || name === 'total fat') nutrients.fat = Math.round(val * 10) / 10;
+    else if (name.includes('fiber')) nutrients.fiber = Math.round(val * 10) / 10;
+    else if (name.includes('sodium')) nutrients.sodium = Math.round(val);
+    else if (name.includes('sugars')) nutrients.sugar = Math.round(val * 10) / 10;
+    else if (name.includes('calcium')) nutrients.calcium = Math.round(val);
+    else if (name.includes('iron')) nutrients.iron = Math.round(val * 10) / 10;
+    else if (name.includes('potassium')) nutrients.potassium = Math.round(val);
+    else if (name.includes('vitamin c')) nutrients.vitaminC = Math.round(val);
+    else if (name.includes('vitamin d')) nutrients.vitaminD = Math.round(val * 10) / 10;
+    else if (name.includes('vitamin a')) nutrients.vitaminA = Math.round(val);
+    else if (name.includes('saturated')) nutrients.satFat = Math.round(val * 10) / 10;
+    else if (name.includes('cholesterol')) nutrients.cholesterol = Math.round(val);
+    else if (name.includes('magnesium')) nutrients.magnesium = Math.round(val);
+    else if (name.includes('zinc')) nutrients.zinc = Math.round(val * 10) / 10;
+  });
+
+  const measures = food.foodMeasures || food.servingSizeUnit ? [
+    { label: food.servingSizeUnit || 'g', weight: food.servingSize || 100 },
+  ] : [{ label: 'g', weight: 100 }];
+
+  return {
+    id: `usda-${food.fdcId}`,
+    fdcId: food.fdcId,
+    name: food.description || food.lowercaseDescription || 'Unknown',
+    brand: food.brandOwner || food.brandName || '',
+    servingG: food.servingSize || 100,
+    servingUnit: food.servingSizeUnit || 'g',
+    measures,
+    source: 'usda',
+    ...nutrients,
+    cal: nutrients.cal || 0,
+    protein: nutrients.protein || 0,
+    carbs: nutrients.carbs || 0,
+    fat: nutrients.fat || 0,
+    fiber: nutrients.fiber || 0,
+    sodium: nutrients.sodium || 0,
+  };
+}
+
+async function searchUsda(query, pageSize = 20) {
+  const cacheKey = `usda-search-${query.toLowerCase().trim()}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return cached.results;
+
+  try {
+    const res = await fetch(`${USDA_BASE}/foods/search?query=${encodeURIComponent(query)}&pageSize=${pageSize}&api_key=${USDA_API_KEY}`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const results = (data.foods || []).map(normalizeUsda);
+    await cacheSet({ id: cacheKey, results, query: query.toLowerCase().trim() });
+    return results;
+  } catch { return []; }
+}
+
+async function getUsdaById(fdcId) {
+  const cacheKey = `usda-${fdcId}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const res = await fetch(`${USDA_BASE}/food/${fdcId}?api_key=${USDA_API_KEY}`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const food = await res.json();
+    const normalized = normalizeUsda(food);
+    await cacheSet(normalized);
+    return normalized;
+  } catch { return null; }
+}
+
+// ─── Open Food Facts (barcode + fallback search) ──────────────────────────────
+
+function normalizeOff(product) {
+  const n = product.nutriments || {};
+  return {
+    id: `off-${product.code || product._id}`,
+    barcode: product.code || product._id,
+    name: product.product_name || product.product_name_en || 'Unknown',
+    brand: product.brands || '',
+    servingG: parseFloat(product.serving_quantity) || 100,
+    servingUnit: product.serving_quantity_unit || 'g',
+    measures: [{ label: product.serving_size || '100g', weight: parseFloat(product.serving_quantity) || 100 }],
+    source: 'off',
+    cal: Math.round(n['energy-kcal_100g'] || n.energy_100g / 4.184 || 0),
+    protein: Math.round((n.proteins_100g || 0) * 10) / 10,
+    carbs: Math.round((n.carbohydrates_100g || 0) * 10) / 10,
+    fat: Math.round((n.fat_100g || 0) * 10) / 10,
+    fiber: Math.round((n.fiber_100g || 0) * 10) / 10,
+    sodium: Math.round((n.sodium_100g || 0) * 1000),
+    sugar: Math.round((n.sugars_100g || 0) * 10) / 10,
+    satFat: Math.round((n['saturated-fat_100g'] || 0) * 10) / 10,
+    allergens: product.allergens_tags || [],
+    dietaryModes: product.labels_tags || [],
+    imageUrl: product.image_small_url || product.image_url || '',
+  };
+}
+
+async function lookupBarcode(barcode) {
+  const cacheKey = `off-${barcode}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const res = await fetch(`${OFF_BASE}/product/${barcode}.json`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.status !== 1 || !data.product) return null;
+    const normalized = normalizeOff(data.product);
+    await cacheSet(normalized);
+    return normalized;
+  } catch { return null; }
+}
+
+async function searchOff(query, pageSize = 20) {
+  const cacheKey = `off-search-${query.toLowerCase().trim()}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return cached.results;
+
+  try {
+    const res = await fetch(`${OFF_BASE}/search?search_terms=${encodeURIComponent(query)}&page_size=${pageSize}&json=true&fields=code,product_name,brands,nutriments,serving_quantity,serving_size,allergens_tags,labels_tags,image_small_url`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const results = (data.products || []).map(normalizeOff).filter(f => f.cal > 0 || f.name !== 'Unknown');
+    await cacheSet({ id: cacheKey, results, query: query.toLowerCase().trim() });
+    return results;
+  } catch { return []; }
+}
+
+// ─── Unified search ───────────────────────────────────────────────────────────
+
+export const FoodDb = {
+  // Primary search: USDA first, fall back to OFF if no results
+  async search(query, opts = {}) {
+    const q = query.trim();
+    if (!q) return [];
+    const { pageSize = 20, source = 'auto' } = opts;
+
+    if (source === 'off') return searchOff(q, pageSize);
+    if (source === 'usda') return searchUsda(q, pageSize);
+
+    // Auto: run both concurrently, merge with USDA first
+    const [usda, off] = await Promise.all([searchUsda(q, pageSize), searchOff(q, Math.min(pageSize, 10))]);
+    const seen = new Set(usda.map(f => f.name.toLowerCase()));
+    const unique = off.filter(f => !seen.has(f.name.toLowerCase()));
+    return [...usda, ...unique].slice(0, pageSize);
+  },
+
+  // Barcode lookup: OFF primary (more barcodes), USDA GTINs as fallback
+  async lookupBarcode(barcode) {
+    return lookupBarcode(barcode);
+  },
+
+  // Fetch full detail for a specific item
+  async getById(id) {
+    if (id.startsWith('usda-')) {
+      return getUsdaById(id.replace('usda-', ''));
+    }
+    return cacheGet(id);
+  },
+
+  // Scale macros to a given gram weight
+  scale(food, grams) {
+    const base = food.servingG || 100;
+    const ratio = grams / base;
+    return {
+      ...food,
+      qty: grams,
+      cal: Math.round((food.cal || 0) * ratio),
+      protein: Math.round((food.protein || 0) * ratio * 10) / 10,
+      carbs: Math.round((food.carbs || 0) * ratio * 10) / 10,
+      fat: Math.round((food.fat || 0) * ratio * 10) / 10,
+      fiber: Math.round((food.fiber || 0) * ratio * 10) / 10,
+      sodium: Math.round((food.sodium || 0) * ratio),
+      sugar: Math.round((food.sugar || 0) * ratio * 10) / 10,
+      satFat: Math.round((food.satFat || 0) * ratio * 10) / 10,
+    };
+  },
+
+  // Evict stale cache entries
+  evictStale: cacheEvict,
+};
