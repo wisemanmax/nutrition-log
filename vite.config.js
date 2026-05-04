@@ -36,8 +36,21 @@ export default defineConfig({
         entryFileNames: 'assets/index.js',
         chunkFileNames: 'assets/[name].js',
         assetFileNames: 'assets/[name][extname]',
+        manualChunks: {
+          react: ['react', 'react-dom'],
+          recharts: ['recharts'],
+        },
       },
     },
+    chunkSizeWarningLimit: 700,
   },
   server: { port: 3004 },
+  resolve: {
+    alias: { '@': '/src' },
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+  },
 });
