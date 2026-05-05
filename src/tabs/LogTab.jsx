@@ -5,12 +5,12 @@ import { Icons } from '../components/Icons';
 import { FoodDb } from '../utils/foodDb';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { today, ago, uid, fmtDate } from '../utils/helpers';
-import { MEAL_SECTIONS } from '../state/reducer';
+import { MEAL_SECTIONS } from '../state/reducer.ts';
 import { Analytics } from '../utils/analytics';
 import { Flags } from '../utils/flags';
 import { hasAllergenConflict } from '../utils/allergens';
 
-// ─── Food Search Sheet ────────────────────────────────────────────────────────
+// ─── Debounce hook ────────────────────────────────────────────────────────────
 
 function useDebounce(value, delay) {
   const [debounced, setDebounced] = useState(value);
@@ -21,13 +21,67 @@ function useDebounce(value, delay) {
   return debounced;
 }
 
+// ─── MacroPill ────────────────────────────────────────────────────────────────
+
 function MacroPill({ label, value, color }) {
   return (
-    <span style={{ fontSize: 10, fontWeight: 700, color, background: `${color}15`, padding: "2px 6px", borderRadius: 6 }}>
+    <span style={{ fontSize: 10, fontWeight: 700, color, background: `${color}15`, padding: '2px 6px', borderRadius: 6 }}>
       {value}{label}
     </span>
   );
 }
+
+// ─── Voice logging ───────────────────────────────────────────────────────────
+
+function VoiceLogButton({ onVoiceResult }) {
+  const [listening, setListening] = useState(false);
+  const recognRef = useRef(null);
+
+  const supported = typeof window !== 'undefined' &&
+    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+
+  if (!supported || !Flags.get('voiceLog')) return null;
+
+  const start = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recog = new SR();
+    recog.lang = 'en-US';
+    recog.interimResults = false;
+    recog.maxAlternatives = 1;
+    recog.onresult = (e) => {
+      const transcript = e.results[0][0].transcript;
+      onVoiceResult(transcript);
+      setListening(false);
+    };
+    recog.onerror = () => setListening(false);
+    recog.onend = () => setListening(false);
+    recognRef.current = recog;
+    recog.start();
+    setListening(true);
+    Haptic.light();
+    Analytics.track('voice_log_started', {});
+  };
+
+  const stop = () => { recognRef.current?.stop(); setListening(false); };
+
+  return (
+    <button
+      onClick={listening ? stop : start}
+      aria-label={listening ? 'Stop voice input' : 'Start voice input'}
+      title="Voice search"
+      style={{
+        width: 44, height: 44, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center',
+        justifyContent: 'center', cursor: 'pointer', border: `1px solid ${listening ? V.danger : V.cardBorder}`,
+        background: listening ? `${V.danger}15` : 'rgba(255,255,255,0.05)', fontSize: 18,
+        animation: listening ? 'pulse 1s infinite' : 'none',
+      }}
+    >
+      🎤
+    </button>
+  );
+}
+
+// ─── Food Search Sheet ────────────────────────────────────────────────────────
 
 function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allFoods = [], onToggleFavorite, userAllergens = [] }) {
   const [query, setQuery] = useState('');
@@ -67,6 +121,11 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
     }
   };
 
+  const handleVoiceResult = (transcript) => {
+    setQuery(transcript);
+    setActiveTab('search');
+  };
+
   const displayList = activeTab === 'recents' ? recents
     : activeTab === 'favorites' ? allFoods.filter(f => favorites.includes(f.id))
     : results;
@@ -77,7 +136,7 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
 
   return (
     <Sheet title="Add Food" onClose={onClose}>
-      {/* Search input */}
+      {/* Search input row */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <div style={{ position: 'relative', flex: 1 }}>
           <input
@@ -85,31 +144,39 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
             value={query}
             onChange={e => { setQuery(e.target.value); setActiveTab('search'); }}
             placeholder="Search USDA database…"
-            style={{ width: '100%', padding: '12px 36px 12px 14px', background: 'rgba(255,255,255,0.05)', border: `1px solid ${V.cardBorder}`,
-              borderRadius: 12, color: V.text, fontSize: 15, fontFamily: V.font, outline: 'none', boxSizing: 'border-box', minHeight: 44 }}
+            aria-label="Search foods"
+            style={{
+              width: '100%', padding: '12px 36px 12px 14px', background: 'rgba(255,255,255,0.05)',
+              border: `1px solid ${V.cardBorder}`, borderRadius: 12, color: V.text, fontSize: 15,
+              fontFamily: V.font, outline: 'none', boxSizing: 'border-box', minHeight: 44,
+            }}
           />
           {loading || barcodeLoading ? (
-            <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-              width: 16, height: 16, border: `2px solid ${V.accent}30`, borderTopColor: V.accent, borderRadius: '50%', animation: 'spin .6s linear infinite' }} />
+            <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, border: `2px solid ${V.accent}30`, borderTopColor: V.accent, borderRadius: '50%', animation: 'spin .6s linear infinite' }} />
           ) : query ? (
-            <button onClick={() => setQuery('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: V.text3, fontSize: 18, lineHeight: 1 }}>×</button>
+            <button onClick={() => setQuery('')} aria-label="Clear search" style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: V.text3, fontSize: 18, lineHeight: 1 }}>×</button>
           ) : null}
         </div>
+
         {Flags.get('barcodeScanning') && (
           <button onClick={() => setShowBarcode(true)} aria-label="Scan barcode"
             style={{ width: 44, height: 44, borderRadius: 12, border: `1px solid ${V.cardBorder}`, background: 'rgba(255,255,255,0.05)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
             📷
           </button>
         )}
+
+        <VoiceLogButton onVoiceResult={handleVoiceResult} />
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+      <div role="tablist" style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         {[['search', 'Search'], ['recents', 'Recents'], ['favorites', '★ Saved']].map(([id, label]) => (
-          <button key={id} onClick={() => setActiveTab(id)}
-            style={{ flex: 1, padding: '7px 4px', borderRadius: 10, border: `1px solid ${activeTab === id ? V.accent : V.cardBorder}`,
+          <button key={id} role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)}
+            style={{
+              flex: 1, padding: '7px 4px', borderRadius: 10, border: `1px solid ${activeTab === id ? V.accent : V.cardBorder}`,
               background: activeTab === id ? `${V.accent}12` : 'transparent', color: activeTab === id ? V.accent : V.text3,
-              fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: V.font }}>
+              fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: V.font,
+            }}>
             {label}
           </button>
         ))}
@@ -122,6 +189,7 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
             <div>
               <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
               <div style={{ fontSize: 13 }}>Search 1.4M+ USDA foods</div>
+              <div style={{ fontSize: 11, marginTop: 6 }}>Or scan a barcode{Flags.get('voiceLog') ? ' or speak your food' : ''}</div>
             </div>
           ) : (
             <div style={{ fontSize: 13 }}>No results found</div>
@@ -130,7 +198,14 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {displayList.map(food => (
-          <FoodResultRow key={food.id} food={food} onSelect={food2 => { onSelect(food2); }} favorites={favorites} onToggleFavorite={onToggleFavorite} allergenWarning={hasAllergenConflict(food, userAllergens)} />
+          <FoodResultRow
+            key={food.id}
+            food={food}
+            onSelect={food2 => onSelect(food2)}
+            favorites={favorites}
+            onToggleFavorite={onToggleFavorite}
+            allergenWarning={hasAllergenConflict(food, userAllergens)}
+          />
         ))}
       </div>
     </Sheet>
@@ -148,7 +223,9 @@ function FoodResultRow({ food, onSelect, favorites = [], onToggleFavorite, aller
 
   return (
     <div style={{ background: V.card, border: `1px solid ${V.cardBorder}`, borderRadius: 12, overflow: 'hidden' }}>
-      <button onClick={() => setExpanded(!expanded)} style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px', textAlign: 'left' }}>
+      <button onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
+        style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px', textAlign: 'left' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -163,7 +240,7 @@ function FoodResultRow({ food, onSelect, favorites = [], onToggleFavorite, aller
             </div>
             {food.brand && <div style={{ fontSize: 10, color: V.text3, marginTop: 1 }}>{food.brand}</div>}
             {allergenWarning && (
-              <div style={{ fontSize: 10, color: V.danger, fontWeight: 700, marginTop: 2 }}>⚠️ Contains allergen</div>
+              <div role="alert" style={{ fontSize: 10, color: V.danger, fontWeight: 700, marginTop: 2 }}>⚠️ Contains allergen</div>
             )}
             <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
               <MacroPill label=" kcal" value={food.cal} color={V.warn} />
@@ -172,7 +249,7 @@ function FoodResultRow({ food, onSelect, favorites = [], onToggleFavorite, aller
               <MacroPill label="F" value={food.fat} color={V.warn} />
             </div>
           </div>
-          <span style={{ color: V.text3, fontSize: 16, flexShrink: 0, marginLeft: 8 }}>{expanded ? '▲' : '▼'}</span>
+          <span aria-hidden="true" style={{ color: V.text3, fontSize: 16, flexShrink: 0, marginLeft: 8 }}>{expanded ? '▲' : '▼'}</span>
         </div>
       </button>
 
@@ -182,7 +259,7 @@ function FoodResultRow({ food, onSelect, favorites = [], onToggleFavorite, aller
             <Field label="Amount" type="number" value={qty} onChange={setQty} inputMode="decimal" style={{ flex: 1, marginBottom: 0 }} />
             <div style={{ marginBottom: 0 }}>
               <div style={{ fontSize: 11, color: V.text3, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6, fontWeight: 600 }}>Unit</div>
-              <select value={unit} onChange={e => setUnit(e.target.value)}
+              <select value={unit} onChange={e => setUnit(e.target.value)} aria-label="Unit"
                 style={{ padding: '12px 10px', background: 'rgba(255,255,255,0.04)', border: `1px solid ${V.cardBorder}`, borderRadius: 12, color: V.text, fontSize: 14, minHeight: 44 }}>
                 <option value="g">g</option>
                 <option value="oz">oz</option>
@@ -231,7 +308,7 @@ function MealItemRow({ item, onEdit, onDelete }) {
           <Field label="" type="number" value={qty} onChange={setQty} inputMode="decimal" style={{ flex: 1, marginBottom: 0 }} />
           <span style={{ fontSize: 11, color: V.text3 }}>{item.unit || 'g'}</span>
           <Btn v="small" onClick={() => { onEdit({ ...scaled, qty: parseFloat(qty), unit: item.unit }); setEditing(false); }}>Save</Btn>
-          <button onClick={() => setEditing(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: V.text3, fontSize: 18 }}>×</button>
+          <button onClick={() => setEditing(false)} aria-label="Cancel edit" style={{ background: 'none', border: 'none', cursor: 'pointer', color: V.text3, fontSize: 18 }}>×</button>
         </div>
         <div style={{ fontSize: 10, color: V.text3, marginTop: 4 }}>{scaled.cal} kcal · {scaled.protein}P · {scaled.carbs}C · {scaled.fat}F</div>
       </div>
@@ -252,8 +329,8 @@ function MealItemRow({ item, onEdit, onDelete }) {
         <MacroPill label="F" value={item.fat} color={V.warn} />
       </div>
       <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
-        <button onClick={() => setEditing(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: V.text3, padding: 4, fontSize: 14 }} aria-label="Edit">✏️</button>
-        <button onClick={onDelete} style={{ background: 'none', border: 'none', cursor: 'pointer', color: V.danger, padding: 4, fontSize: 14 }} aria-label="Delete">🗑</button>
+        <button onClick={() => setEditing(true)} aria-label={`Edit ${item.name}`} style={{ background: 'none', border: 'none', cursor: 'pointer', color: V.text3, padding: 4, fontSize: 14 }}>✏️</button>
+        <button onClick={onDelete} aria-label={`Delete ${item.name}`} style={{ background: 'none', border: 'none', cursor: 'pointer', color: V.danger, padding: 4, fontSize: 14 }}>🗑</button>
       </div>
     </div>
   );
@@ -267,7 +344,7 @@ function MealSection({ section, date, onAdd, onEditItem, onDeleteItem }) {
   const sectionProt = items.reduce((s, i) => s + (i.protein || 0), 0);
 
   return (
-    <Card style={{ padding: 0, overflow: 'hidden' }}>
+    <Card style={{ padding: 0, overflow: 'hidden' }} role="region" aria-label={section.name}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderBottom: items.length ? `1px solid ${V.cardBorder}` : 'none' }}>
         <div>
           <span style={{ fontSize: 13, fontWeight: 700, color: V.text }}>{section.name}</span>
@@ -275,7 +352,7 @@ function MealSection({ section, date, onAdd, onEditItem, onDeleteItem }) {
             <span style={{ fontSize: 10, color: V.text3, marginLeft: 8 }}>{sectionCal} kcal · {Math.round(sectionProt)}g P</span>
           )}
         </div>
-        <Btn v="ghost" onClick={onAdd} style={{ padding: '4px 8px', minHeight: 32, fontSize: 12 }}>
+        <Btn v="ghost" onClick={onAdd} aria-label={`Add food to ${section.name}`} style={{ padding: '4px 8px', minHeight: 32, fontSize: 12 }}>
           {Icons.plus({ size: 12, color: V.accent })} Add
         </Btn>
       </div>
@@ -327,12 +404,69 @@ function QuickAddSheet({ sectionName, onSave, onClose }) {
   );
 }
 
+// ─── Template picker sheet ────────────────────────────────────────────────────
+
+function TemplatePickerSheet({ templates, onApply, onClose }) {
+  if (!templates || templates.length === 0) {
+    return (
+      <Sheet title="Apply Template" onClose={onClose}>
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: V.text3 }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+          <div style={{ fontSize: 13 }}>No meal templates saved yet.</div>
+          <div style={{ fontSize: 11, marginTop: 6 }}>Save a day's meals as a template from the log options.</div>
+        </div>
+      </Sheet>
+    );
+  }
+  return (
+    <Sheet title="Apply Template" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {templates.map(tmpl => {
+          const totalCal = tmpl.meals?.flatMap(m => m.items || []).reduce((s, i) => s + (i.cal || 0), 0) || 0;
+          const totalProt = tmpl.meals?.flatMap(m => m.items || []).reduce((s, i) => s + (i.protein || 0), 0) || 0;
+          return (
+            <button key={tmpl.id} onClick={() => { onApply(tmpl); onClose(); }}
+              style={{ background: V.card, border: `1px solid ${V.cardBorder}`, borderRadius: 12, padding: '12px 14px', cursor: 'pointer', textAlign: 'left' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: V.text }}>{tmpl.name}</div>
+              <div style={{ fontSize: 10, color: V.text3, marginTop: 3 }}>
+                {totalCal > 0 ? `${totalCal} kcal · ${Math.round(totalProt)}g protein` : 'No macros saved'}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </Sheet>
+  );
+}
+
+// ─── Save-as-template sheet ───────────────────────────────────────────────────
+
+function SaveTemplateSheet({ dayData, onSave, onClose }) {
+  const [name, setName] = useState('');
+  const save = () => {
+    if (!name.trim()) return;
+    onSave({ id: uid(), name: name.trim(), meals: dayData?.meals || [] });
+    onClose();
+  };
+  return (
+    <Sheet title="Save as Template" onClose={onClose} footer={<div style={{ padding: 16 }}><Btn full onClick={save} disabled={!name.trim()}>Save Template</Btn></div>}>
+      <Field label="Template Name" value={name} onChange={setName} placeholder="e.g. Typical Bulking Day" autoFocus />
+      <div style={{ fontSize: 12, color: V.text3, lineHeight: 1.5 }}>
+        All meals from this day will be saved as a reusable template.
+      </div>
+    </Sheet>
+  );
+}
+
 // ─── LogTab ───────────────────────────────────────────────────────────────────
 
 export function LogTab({ s, d }) {
   const [viewDate, setViewDate] = useState(today());
-  const [addingToSection, setAddingToSection] = useState(null); // section name or null
+  const [addingToSection, setAddingToSection] = useState(null);
   const [quickAddSection, setQuickAddSection] = useState(null);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
 
   const dayData = s.nutrition.find(n => n.date === viewDate);
   const meals = dayData?.meals || MEAL_SECTIONS.map(name => ({ name, items: [] }));
@@ -343,7 +477,6 @@ export function LogTab({ s, d }) {
   const totalFat = dayData?.fat || 0;
 
   const isToday = viewDate === today();
-  const isYesterday = viewDate === ago(1);
 
   const navigateDay = (delta) => {
     const d2 = new Date(viewDate + 'T12:00:00');
@@ -355,6 +488,21 @@ export function LogTab({ s, d }) {
     const yesterday = ago(1);
     d({ type: 'COPY_DAY', fromDate: yesterday, toDate: viewDate });
     Haptic.success();
+    Analytics.track('copy_from_yesterday', {});
+  };
+
+  const applyTemplate = (tmpl) => {
+    const clonedMeals = (tmpl.meals || []).map(m => ({
+      ...m,
+      items: (m.items || []).map(i => ({ ...i, id: uid(), loggedAt: new Date().toISOString() })),
+    }));
+    clonedMeals.forEach(m => {
+      (m.items || []).forEach(item => {
+        d({ type: 'ADD_MEAL_ITEM', date: viewDate, sectionName: m.name, item });
+      });
+    });
+    Haptic.success();
+    Analytics.track('template_applied', { name: tmpl.name });
   };
 
   const handleFoodSelect = (food) => {
@@ -373,6 +521,8 @@ export function LogTab({ s, d }) {
     Haptic.medium();
   };
 
+  const hasAnyItems = dayData?.meals?.some(m => (m.items || []).length > 0);
+
   return (
     <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Header */}
@@ -383,8 +533,38 @@ export function LogTab({ s, d }) {
           <div style={{ fontSize: 16, fontWeight: 700, color: V.text }}>{fmtDate(viewDate)}</div>
           {!isToday && <div style={{ fontSize: 10, color: V.text3 }}>{viewDate}</div>}
         </div>
-        <button onClick={() => navigateDay(1)} disabled={isToday} aria-label="Next day"
-          style={{ background: 'none', border: 'none', cursor: isToday ? 'default' : 'pointer', color: isToday ? V.text3 : V.accent, fontSize: 20, padding: '4px 8px' }}>›</button>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          {/* Options menu */}
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setShowOptions(v => !v)} aria-label="Day options" aria-haspopup="true"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: V.text3, fontSize: 18, padding: '4px 6px' }}>
+              ⋮
+            </button>
+            {showOptions && (
+              <>
+                <div onClick={() => setShowOptions(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
+                <div style={{
+                  position: 'absolute', right: 0, top: '100%', zIndex: 100, minWidth: 180,
+                  background: '#1a1f2e', border: `1px solid ${V.cardBorder}`, borderRadius: 12,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.5)', overflow: 'hidden',
+                }}>
+                  {[
+                    { label: '📋 Apply Template', action: () => { setShowTemplatePicker(true); setShowOptions(false); } },
+                    { label: '💾 Save as Template', action: () => { setShowSaveTemplate(true); setShowOptions(false); }, disabled: !hasAnyItems },
+                    { label: '📅 Copy from Yesterday', action: () => { copyFromYesterday(); setShowOptions(false); } },
+                  ].map(opt => (
+                    <button key={opt.label} onClick={opt.action} disabled={opt.disabled}
+                      style={{ width: '100%', padding: '12px 16px', background: 'none', border: 'none', cursor: opt.disabled ? 'default' : 'pointer', textAlign: 'left', color: opt.disabled ? V.text3 : V.text, fontSize: 13, fontFamily: V.font, borderBottom: `1px solid ${V.cardBorder}`, opacity: opt.disabled ? 0.5 : 1 }}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          <button onClick={() => navigateDay(1)} disabled={isToday} aria-label="Next day"
+            style={{ background: 'none', border: 'none', cursor: isToday ? 'default' : 'pointer', color: isToday ? V.text3 : V.accent, fontSize: 20, padding: '4px 8px' }}>›</button>
+        </div>
       </div>
 
       {/* Daily Summary */}
@@ -412,13 +592,6 @@ export function LogTab({ s, d }) {
         <Progress val={totalCal} max={s.goals?.cal || 2400} color={totalCal > (s.goals?.cal || 2400) ? V.danger : V.accent} h={6} />
       </Card>
 
-      {/* Copy from yesterday */}
-      {isToday && !dayData && (
-        <Btn v="secondary" full onClick={copyFromYesterday}>
-          📋 Copy from Yesterday
-        </Btn>
-      )}
-
       {/* Meal sections */}
       {meals.map(section => (
         <MealSection
@@ -430,6 +603,18 @@ export function LogTab({ s, d }) {
           onDeleteItem={handleDeleteItem}
         />
       ))}
+
+      {/* Empty day prompt */}
+      {!hasAnyItems && (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn v="secondary" full onClick={() => setShowTemplatePicker(true)}>
+            📋 Apply Template
+          </Btn>
+          <Btn v="secondary" full onClick={copyFromYesterday}>
+            📅 Copy Yesterday
+          </Btn>
+        </div>
+      )}
 
       {/* Food search sheet */}
       {addingToSection && (
@@ -452,6 +637,26 @@ export function LogTab({ s, d }) {
           onClose={() => setQuickAddSection(null)}
         />
       )}
+
+      {/* Template picker */}
+      {showTemplatePicker && (
+        <TemplatePickerSheet
+          templates={s.templates || []}
+          onApply={applyTemplate}
+          onClose={() => setShowTemplatePicker(false)}
+        />
+      )}
+
+      {/* Save as template */}
+      {showSaveTemplate && (
+        <SaveTemplateSheet
+          dayData={dayData}
+          onSave={tmpl => { d({ type: 'SAVE_TEMPLATE', template: tmpl }); }}
+          onClose={() => setShowSaveTemplate(false)}
+        />
+      )}
+
+      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }`}</style>
     </div>
   );
 }

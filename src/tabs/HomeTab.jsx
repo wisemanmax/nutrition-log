@@ -11,9 +11,13 @@ import { today, ago } from '../utils/helpers';
 function MacroRing({ value, goal, color, label }) {
   const pct = goal > 0 ? Math.min(1, value / goal) : 0;
   const r = 22, circ = 2 * Math.PI * r;
+  const pctDisplay = Math.round(pct * 100);
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-      <svg width={54} height={54} style={{ transform: "rotate(-90deg)" }}>
+      <svg width={54} height={54} style={{ transform: "rotate(-90deg)" }}
+        role="meter" aria-valuenow={value} aria-valuemin={0} aria-valuemax={goal}
+        aria-label={`${label}: ${value} of ${goal}`}>
+        <title>{label}: {value} / {goal} ({pctDisplay}%)</title>
         <circle cx={27} cy={27} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={5} />
         <circle cx={27} cy={27} r={r} fill="none" stroke={color} strokeWidth={5}
           strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)} strokeLinecap="round" style={{ transition: "stroke-dashoffset .5s" }} />
@@ -66,11 +70,13 @@ export function HomeTab({ s, d }) {
       </div>
 
       {/* Calorie Budget Card */}
-      <Card style={{ padding: 16, background: `linear-gradient(135deg,${V.accent}10,${V.accent2}08)`, border: `1px solid ${V.accent}20` }}>
+      <Card style={{ padding: 16, background: `linear-gradient(135deg,${V.accent}10,${V.accent2}08)`, border: `1px solid ${V.accent}20` }}
+        role="region" aria-label={`Calorie budget: ${tCal} of ${calGoal} calories logged, ${Math.abs(calRemaining)} ${calRemaining >= 0 ? 'remaining' : 'over budget'}`}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: V.text3, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 2 }}>Calories Remaining</div>
-            <div style={{ fontSize: 40, fontWeight: 900, color: calRemaining >= 0 ? V.accent : V.danger, fontFamily: V.mono, lineHeight: 1 }}>
+            <div style={{ fontSize: 40, fontWeight: 900, color: calRemaining >= 0 ? V.accent : V.danger, fontFamily: V.mono, lineHeight: 1 }}
+              aria-live="polite">
               {Math.abs(calRemaining)}
             </div>
             <div style={{ fontSize: 11, color: V.text3, marginTop: 2 }}>
@@ -135,12 +141,15 @@ export function HomeTab({ s, d }) {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button onClick={() => { if (waterCount > 0) { const n = waterCount - 1; setWaterCount(n); LS.set("nl-water-" + td, n); } }}
+              aria-label="Remove one glass of water"
               style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.04)", border: `1px solid ${V.cardBorder}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: V.text3 }}>-</button>
-            <div style={{ minWidth: 54, textAlign: "center" }}>
+            <div style={{ minWidth: 54, textAlign: "center" }}
+              role="meter" aria-valuenow={waterCount} aria-valuemin={0} aria-valuemax={8} aria-label={`Water: ${waterCount} of 8 glasses`}>
               <span style={{ fontSize: 20, fontWeight: 800, color: V.accent2, fontFamily: V.mono }}>{waterCount}</span>
               <span style={{ fontSize: 10, color: V.text3 }}>/8</span>
             </div>
             <button onClick={() => { Haptic.light(); const n = waterCount + 1; setWaterCount(n); LS.set("nl-water-" + td, n); }}
+              aria-label="Add one glass of water"
               style={{ width: 32, height: 32, borderRadius: 8, background: `${V.accent2}15`, border: `1px solid ${V.accent2}25`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: V.accent2, fontWeight: 700 }}>+</button>
           </div>
         </div>
@@ -158,19 +167,22 @@ export function HomeTab({ s, d }) {
             <div style={{ fontSize: 11, fontWeight: 700, color: V.text }}>7-Day Adherence</div>
             <div style={{ fontSize: 9, color: V.text3 }}>Calories & Protein</div>
           </div>
-          <div style={{ display: "flex", gap: 4 }}>
+          <div style={{ display: "flex", gap: 4 }} role="list" aria-label="7-day goal adherence">
             {Array.from({ length: 7 }).map((_, i) => {
               const day = ago(6 - i);
               const n = s.nutrition.find(x => x.date === day);
               const calOk = n && s.goals?.cal ? n.cal >= s.goals.cal * 0.85 : false;
               const protOk = n && s.goals?.protein ? n.protein >= s.goals.protein * 0.9 : false;
               const both = calOk && protOk; const either = calOk || protOk; const isToday = day === today();
+              const status = both ? 'both goals met' : either ? 'partial' : n ? 'missed' : 'not logged';
+              const dayName = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"][new Date(day + "T12:00:00").getDay()];
               return (
-                <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, alignItems: "center" }}>
+                <div key={i} role="listitem" aria-label={`${dayName}: ${status}`}
+                  style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, alignItems: "center" }}>
                   <div style={{ width: "100%", height: 28, borderRadius: 5, border: isToday ? `1px solid ${V.accent}40` : "none",
                     background: both ? "linear-gradient(180deg,#22c55e,#16a34a)" : either ? "linear-gradient(180deg,#f59e0b,#d97706)" : n ? "rgba(244,63,94,0.25)" : "rgba(255,255,255,0.04)" }} />
                   <div style={{ fontSize: 7, color: isToday ? V.accent : V.text3, fontWeight: isToday ? 700 : 400 }}>
-                    {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"][new Date(day + "T12:00:00").getDay()]}
+                    {dayName}
                   </div>
                 </div>
               );

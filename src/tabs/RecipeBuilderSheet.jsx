@@ -4,6 +4,7 @@ import { Sheet, Btn, Field, Card } from '../components/ui';
 import { FoodDb } from '../utils/foodDb';
 import { uid } from '../utils/helpers';
 import { SuccessToastCtrl } from '../components/ui';
+import { Flags } from '../utils/flags';
 
 function useDebounce(value, delay) {
   const [debounced, setDebounced] = useState(value);
@@ -22,13 +23,185 @@ function MacroPill({ label, value, color }) {
   );
 }
 
+// ─── Schema.org Recipe JSON-LD parser ────────────────────────────────────────
+
+function parseSchemaOrgRecipe(jsonLd) {
+  const data = Array.isArray(jsonLd) ? jsonLd.find(d => d['@type'] === 'Recipe') : jsonLd;
+  if (!data || data['@type'] !== 'Recipe') return null;
+
+  const ingredients = (data.recipeIngredient || []).map(raw => ({
+    raw,
+    // Try to extract a quantity and name for display; actual nutrition search done by user
+    id: uid(),
+    name: raw,
+    qty: 0, cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sodium: 0, servingG: 100,
+    source: 'manual',
+  }));
+
+  const yields = data.recipeYield;
+  const servings = (() => {
+    if (!yields) return 1;
+    const n = parseInt(Array.isArray(yields) ? yields[0] : yields);
+    return isNaN(n) ? 1 : n;
+  })();
+
+  return {
+    name: data.name || '',
+    description: data.description || '',
+    servings,
+    ingredients,
+    rawIngredients: data.recipeIngredient || [],
+    sourceUrl: data.url || '',
+    image: (Array.isArray(data.image) ? data.image[0] : data.image) || '',
+  };
+}
+
+// Try to extract JSON-LD from HTML text
+function extractJsonLdFromHtml(html) {
+  const matches = html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+  for (const m of matches) {
+    try {
+      const parsed = JSON.parse(m[1]);
+      // Handle @graph arrays
+      if (parsed['@graph']) {
+        const recipe = parsed['@graph'].find(n => n['@type'] === 'Recipe');
+        if (recipe) return recipe;
+      }
+      if (Array.isArray(parsed)) {
+        const recipe = parsed.find(n => n['@type'] === 'Recipe');
+        if (recipe) return recipe;
+      }
+      if (parsed['@type'] === 'Recipe') return parsed;
+    } catch { /* next */ }
+  }
+  return null;
+}
+
+// ─── URL import sheet ─────────────────────────────────────────────────────────
+
+function UrlImportSheet({ onImport, onClose }) {
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [preview, setPreview] = useState(null);
+
+  const fetchRecipe = async () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    setLoading(true);
+    setError('');
+    setPreview(null);
+
+    try {
+      // Use a CORS proxy for client-side fetch (allorigins.win is free)
+      const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(trimmed)}`;
+      const res = await fetch(proxy, { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) throw new Error('Could not fetch page');
+      const data = await res.json();
+      const html = data.contents;
+
+      const jsonLd = extractJsonLdFromHtml(html);
+      if (!jsonLd) {
+        setError('No recipe data found on this page. The site may not use standard recipe markup.');
+        setLoading(false);
+        return;
+      }
+
+      const parsed = parseSchemaOrgRecipe(jsonLd);
+      if (!parsed) {
+        setError('Could not parse recipe data from this page.');
+        setLoading(false);
+        return;
+      }
+      setPreview(parsed);
+    } catch (e) {
+      setError('Failed to fetch the recipe. Check the URL and try again.');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <Sheet title="Import Recipe from URL" onClose={onClose}
+      footer={
+        <div style={{ padding: 16 }}>
+          {preview ? (
+            <Btn full onClick={() => { onImport(preview); onClose(); }}>
+              Import Recipe
+            </Btn>
+          ) : (
+            <Btn full onClick={fetchRecipe} disabled={!url.trim() || loading}>
+              {loading ? 'Fetching…' : 'Fetch Recipe'}
+            </Btn>
+          )}
+        </div>
+      }>
+      <Field
+        label="Recipe URL"
+        type="url"
+        value={url}
+        onChange={setUrl}
+        placeholder="https://www.allrecipes.com/recipe/..."
+        autoFocus
+      />
+      <div style={{ fontSize: 10, color: V.text3, marginBottom: 12 }}>
+        Works with sites that use standard recipe markup (AllRecipes, NYT Cooking, Serious Eats, etc.)
+      </div>
+
+      {loading && (
+        <div style={{ textAlign: 'center', padding: 20, color: V.text3, fontSize: 12 }}>
+          <div style={{ display: 'inline-block', width: 20, height: 20, border: `2px solid ${V.accent}30`, borderTopColor: V.accent, borderRadius: '50%', animation: 'spin .6s linear infinite', marginBottom: 8 }} />
+          <div>Fetching recipe…</div>
+        </div>
+      )}
+
+      {error && (
+        <div style={{ background: `${V.danger}10`, border: `1px solid ${V.danger}30`, borderRadius: 10, padding: '10px 12px', fontSize: 12, color: V.danger }}>
+          {error}
+        </div>
+      )}
+
+      {preview && (
+        <Card style={{ padding: 12 }}>
+          {preview.image && (
+            <img src={preview.image} alt={preview.name} style={{ width: '100%', borderRadius: 8, objectFit: 'cover', maxHeight: 160, marginBottom: 10 }} />
+          )}
+          <div style={{ fontSize: 15, fontWeight: 700, color: V.text, marginBottom: 4 }}>{preview.name}</div>
+          <div style={{ fontSize: 10, color: V.text3, marginBottom: 8 }}>{preview.servings} serving{preview.servings !== 1 ? 's' : ''}</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+            Ingredients ({preview.rawIngredients.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {preview.rawIngredients.slice(0, 8).map((ing, i) => (
+              <div key={i} style={{ fontSize: 11, color: V.text2, padding: '3px 0', borderBottom: `1px solid rgba(255,255,255,0.03)` }}>
+                • {ing}
+              </div>
+            ))}
+            {preview.rawIngredients.length > 8 && (
+              <div style={{ fontSize: 11, color: V.text3, marginTop: 2 }}>
+                +{preview.rawIngredients.length - 8} more…
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize: 10, color: V.text3, marginTop: 10, padding: '6px 8px', background: `${V.warn}08`, borderRadius: 6, border: `1px solid ${V.warn}20` }}>
+            ⚠️ Nutrition data from imported recipes needs to be added manually. Use the ingredient search to look up macros.
+          </div>
+        </Card>
+      )}
+    </Sheet>
+  );
+}
+
+// ─── Recipe Builder Sheet ─────────────────────────────────────────────────────
+
 export function RecipeBuilderSheet({ existing, onSave, onClose }) {
   const [name, setName] = useState(existing?.name || '');
   const [servings, setServings] = useState(String(existing?.servings || 1));
   const [items, setItems] = useState(existing?.items || []);
+  const [notes, setNotes] = useState(existing?.notes || '');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showUrlImport, setShowUrlImport] = useState(false);
   const debouncedQuery = useDebounce(query, 350);
 
   useEffect(() => {
@@ -74,6 +247,18 @@ export function RecipeBuilderSheet({ existing, onSave, onClose }) {
     }));
   };
 
+  const handleUrlImport = (parsed) => {
+    if (parsed.name && !name) setName(parsed.name);
+    if (parsed.servings) setServings(String(parsed.servings));
+    // Imported raw ingredients become searchable stubs — user fills in nutrition
+    const stubs = parsed.rawIngredients.map(raw => ({
+      id: uid(), name: raw, cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0,
+      sodium: 0, servingG: 100, qty: 100, unit: 'g', source: 'manual',
+    }));
+    setItems(prev => [...prev, ...stubs]);
+    SuccessToastCtrl.show(`Imported ${parsed.rawIngredients.length} ingredients — add nutrition via search`);
+  };
+
   const save = () => {
     if (!name.trim() || items.length === 0) return;
     onSave({
@@ -81,6 +266,7 @@ export function RecipeBuilderSheet({ existing, onSave, onClose }) {
       name: name.trim(),
       servings: svgs,
       items,
+      notes: notes.trim(),
       macros: { total: totalMacros, perServing },
       createdAt: existing?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -90,76 +276,106 @@ export function RecipeBuilderSheet({ existing, onSave, onClose }) {
   };
 
   return (
-    <Sheet title={existing ? 'Edit Recipe' : 'New Recipe'} onClose={onClose}
-      footer={
-        <div style={{ padding: 16, display: 'flex', gap: 8 }}>
-          <Btn v="secondary" full onClick={onClose}>Cancel</Btn>
-          <Btn full onClick={save} disabled={!name.trim() || items.length === 0}>Save Recipe</Btn>
-        </div>
-      }>
-      <Field label="Recipe Name" value={name} onChange={setName} placeholder="e.g. Protein Pancakes" autoFocus />
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
-        <Field label="Servings" type="number" value={servings} onChange={setServings} inputMode="decimal" />
-      </div>
-
-      {/* Per-serving macros */}
-      {items.length > 0 && (
-        <Card style={{ padding: 10, marginBottom: 12 }}>
-          <div style={{ fontSize: 9, color: V.text3, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>Per Serving</div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <MacroPill label=" kcal" value={perServing.cal} color={V.warn} />
-            <MacroPill label="P" value={perServing.protein} color={V.accent} />
-            <MacroPill label="C" value={perServing.carbs} color={V.accent2} />
-            <MacroPill label="F" value={perServing.fat} color={V.warn} />
-            {perServing.fiber > 0 && <MacroPill label="g Fiber" value={perServing.fiber} color={V.text2} />}
+    <>
+      <Sheet title={existing ? 'Edit Recipe' : 'New Recipe'} onClose={onClose}
+        footer={
+          <div style={{ padding: 16, display: 'flex', gap: 8 }}>
+            <Btn v="secondary" full onClick={onClose}>Cancel</Btn>
+            <Btn full onClick={save} disabled={!name.trim() || items.length === 0}>Save Recipe</Btn>
           </div>
-        </Card>
-      )}
+        }>
 
-      {/* Ingredients list */}
-      {items.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Ingredients</div>
-          {items.map(item => (
-            <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: `1px solid rgba(255,255,255,0.04)` }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: V.text, lineHeight: 1.2 }}>{item.name}</div>
-                <div style={{ fontSize: 10, color: V.text3 }}>{item.cal} kcal · {item.protein}P</div>
-              </div>
-              <input type="number" value={item.qty} onChange={e => updateQty(item.id, e.target.value)}
-                style={{ width: 60, padding: '4px 8px', background: 'rgba(255,255,255,0.05)', border: `1px solid ${V.cardBorder}`, borderRadius: 8, color: V.text, fontSize: 12, textAlign: 'right' }} />
-              <span style={{ fontSize: 10, color: V.text3 }}>g</span>
-              <button onClick={() => removeIngredient(item.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: V.danger, fontSize: 16, padding: 2 }}>×</button>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+          <div style={{ flex: 1 }}>
+            <Field label="Recipe Name" value={name} onChange={setName} placeholder="e.g. Protein Pancakes" autoFocus />
+          </div>
+          {Flags.get('recipeUrlImport') && (
+            <div style={{ paddingTop: 28 }}>
+              <button onClick={() => setShowUrlImport(true)}
+                title="Import from URL"
+                aria-label="Import recipe from URL"
+                style={{ height: 44, padding: '0 14px', borderRadius: 12, border: `1px solid ${V.cardBorder}`, background: 'rgba(255,255,255,0.05)', cursor: 'pointer', color: V.text2, fontSize: 12, fontFamily: V.font, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
+                🔗 URL
+              </button>
             </div>
+          )}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+          <Field label="Servings" type="number" value={servings} onChange={setServings} inputMode="decimal" />
+        </div>
+
+        <Field label="Notes (optional)" value={notes} onChange={setNotes} placeholder="e.g. prep tips, storage instructions" />
+
+        {/* Per-serving macros */}
+        {items.length > 0 && (
+          <Card style={{ padding: 10, marginBottom: 12 }}>
+            <div style={{ fontSize: 9, color: V.text3, fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>Per Serving</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <MacroPill label=" kcal" value={perServing.cal} color={V.warn} />
+              <MacroPill label="P" value={perServing.protein} color={V.accent} />
+              <MacroPill label="C" value={perServing.carbs} color={V.accent2} />
+              <MacroPill label="F" value={perServing.fat} color={V.warn} />
+              {perServing.fiber > 0 && <MacroPill label="g Fiber" value={perServing.fiber} color={V.text2} />}
+            </div>
+          </Card>
+        )}
+
+        {/* Ingredients list */}
+        {items.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+              Ingredients ({items.length})
+            </div>
+            {items.map(item => (
+              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: `1px solid rgba(255,255,255,0.04)` }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: V.text, lineHeight: 1.2, wordBreak: 'break-word' }}>{item.name}</div>
+                  <div style={{ fontSize: 10, color: V.text3 }}>{item.cal} kcal · {item.protein}P</div>
+                </div>
+                <input type="number" value={item.qty} onChange={e => updateQty(item.id, e.target.value)}
+                  aria-label={`Quantity for ${item.name}`}
+                  style={{ width: 60, padding: '4px 8px', background: 'rgba(255,255,255,0.05)', border: `1px solid ${V.cardBorder}`, borderRadius: 8, color: V.text, fontSize: 12, textAlign: 'right' }} />
+                <span style={{ fontSize: 10, color: V.text3 }}>g</span>
+                <button onClick={() => removeIngredient(item.id)} aria-label={`Remove ${item.name}`}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: V.danger, fontSize: 16, padding: 2, flexShrink: 0 }}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Ingredient search */}
+        <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+          Add Ingredient
+        </div>
+        <div style={{ position: 'relative', marginBottom: 8 }}>
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search foods…"
+            aria-label="Search foods to add as ingredient"
+            style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.05)', border: `1px solid ${V.cardBorder}`, borderRadius: 12, color: V.text, fontSize: 14, fontFamily: V.font, outline: 'none', boxSizing: 'border-box' }} />
+          {loading && (
+            <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, border: `2px solid ${V.accent}30`, borderTopColor: V.accent, borderRadius: '50%', animation: 'spin .6s linear infinite' }} />
+          )}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {results.slice(0, 6).map(food => (
+            <button key={food.id} onClick={() => addIngredient(food)}
+              style={{ background: V.card, border: `1px solid ${V.cardBorder}`, borderRadius: 10, padding: '8px 12px', cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: V.text }}>{food.name}</div>
+                {food.brand && <div style={{ fontSize: 10, color: V.text3 }}>{food.brand}</div>}
+              </div>
+              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                <MacroPill label=" kcal" value={food.cal} color={V.warn} />
+                <MacroPill label="P" value={food.protein} color={V.accent} />
+              </div>
+            </button>
           ))}
         </div>
-      )}
+      </Sheet>
 
-      {/* Ingredient search */}
-      <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Add Ingredient</div>
-      <div style={{ position: 'relative', marginBottom: 8 }}>
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search foods…"
-          style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.05)', border: `1px solid ${V.cardBorder}`, borderRadius: 12, color: V.text, fontSize: 14, fontFamily: V.font, outline: 'none', boxSizing: 'border-box' }} />
-        {loading && (
-          <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, border: `2px solid ${V.accent}30`, borderTopColor: V.accent, borderRadius: '50%', animation: 'spin .6s linear infinite' }} />
-        )}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {results.slice(0, 6).map(food => (
-          <button key={food.id} onClick={() => addIngredient(food)}
-            style={{ background: V.card, border: `1px solid ${V.cardBorder}`, borderRadius: 10, padding: '8px 12px', cursor: 'pointer', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: V.text }}>{food.name}</div>
-              {food.brand && <div style={{ fontSize: 10, color: V.text3 }}>{food.brand}</div>}
-            </div>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <MacroPill label=" kcal" value={food.cal} color={V.warn} />
-              <MacroPill label="P" value={food.protein} color={V.accent} />
-            </div>
-          </button>
-        ))}
-      </div>
-    </Sheet>
+      {showUrlImport && (
+        <UrlImportSheet onImport={handleUrlImport} onClose={() => setShowUrlImport(false)} />
+      )}
+    </>
   );
 }

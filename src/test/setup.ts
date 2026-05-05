@@ -1,11 +1,8 @@
+/// <reference types="vitest/globals" />
 import '@testing-library/jest-dom';
 
 // IndexedDB mock for test environment
-const idbMock = {
-  stores: new Map(),
-};
-
-Object.defineProperty(global, 'indexedDB', {
+Object.defineProperty(globalThis, 'indexedDB', {
   value: {
     open: () => ({
       addEventListener: () => {},
@@ -16,8 +13,8 @@ Object.defineProperty(global, 'indexedDB', {
 });
 
 // crypto.randomUUID mock
-if (!global.crypto?.randomUUID) {
-  Object.defineProperty(global, 'crypto', {
+if (!(globalThis as any).crypto?.randomUUID) {
+  Object.defineProperty(globalThis, 'crypto', {
     value: {
       randomUUID: () => Math.random().toString(36).slice(2),
       getRandomValues: (arr: Uint8Array) => { arr.fill(0); return arr; },
@@ -42,10 +39,10 @@ const localStorageMock = (() => {
     clear: () => { store = {}; },
   };
 })();
-Object.defineProperty(global, 'localStorage', { value: localStorageMock });
+Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock, writable: true });
 
 // navigator.vibrate mock
-Object.defineProperty(global.navigator, 'vibrate', { value: () => true, writable: true });
+Object.defineProperty(globalThis.navigator, 'vibrate', { value: () => true, writable: true });
 
 // AbortSignal.timeout mock
 if (!AbortSignal.timeout) {

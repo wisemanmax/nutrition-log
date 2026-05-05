@@ -1,15 +1,15 @@
 // Feature flags — can be overridden by a remote config row in Supabase later
 const DEFAULT_FLAGS = {
   barcodeScanning: true,
-  aiCoach: false,        // Q3
-  photoRecognition: false, // Q3
-  appleHealth: false,    // Q3
-  premiumTier: false,    // Q3
-  recipeUrlImport: false, // Q2 — needs Edge Function
-  voiceLog: false,       // Q2 experimental
-  ouraIntegration: false, // Q3
-  restaurantDb: false,   // Q4
-  mealPlanning: false,   // Q4
+  aiCoach: false,           // Q3 — requires Claude API key
+  photoRecognition: false,  // Q3 — requires Claude Vision
+  appleHealth: false,       // Q3 — Capacitor HealthKit
+  premiumTier: true,        // Q3 — UI gate enabled
+  recipeUrlImport: true,    // Q2 — client-side Schema.org parser
+  voiceLog: true,           // Q2 — Web Speech API
+  ouraIntegration: false,   // Q3 — OAuth
+  restaurantDb: false,      // Q4 — Nutritionix API
+  mealPlanning: true,       // Q4 — client-side planner
 };
 
 let _flags = { ...DEFAULT_FLAGS };

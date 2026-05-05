@@ -7,30 +7,63 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: Lint, Test & Build
+  lint-and-typecheck:
+    name: Lint & Type Check
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
+      - run: npm ci
+      - name: Type check
+        run: npm run typecheck
 
-      - name: Install dependencies
-        run: npm ci
-
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
       - name: Run tests
-        run: npm test
+        run: npx vitest run --reporter=verbose
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: coverage/
 
-      - name: Production build
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Build
         run: npm run build
-
+      - name: Check bundle size
+        run: |
+          echo "=== Bundle sizes ==="
+          du -sh dist/assets/*.js 2>/dev/null | sort -k1 -h || true
+          for f in dist/assets/*.js; do
+            size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
+            if [ "$size" -gt 1048576 ]; then
+              echo "ERROR: $f exceeds 1MB ($size bytes)"
+              exit 1
+            fi
+          done
+          echo "All bundles within size budget."
       - name: Upload build artifacts
-        if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: dist
