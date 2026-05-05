@@ -6,6 +6,34 @@ import { Icons } from '../components/Icons';
 import { SessionManager } from '../utils/auth';
 import { ALLERGENS, DIETARY_MODES } from '../utils/allergens';
 import { RecipeBuilderSheet } from './RecipeBuilderSheet';
+import { Flags } from '../utils/flags';
+
+// ─── Feature gate component ───────────────────────────────────────────────────
+// Wraps premium-only content. When user is not premium, renders a paywall card.
+export function PremiumGate({ feature, children, compact = false }) {
+  const isPremium = LS.get('nl-premium') === true;
+  if (isPremium) return children;
+  if (compact) {
+    return (
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6,
+        background: `linear-gradient(135deg, ${V.accent}20, ${V.accent2}20)`, border: `1px solid ${V.accent}30`,
+        fontSize: 10, fontWeight: 700, color: V.accent, letterSpacing: '.04em' }}>
+        PRO
+      </div>
+    );
+  }
+  return (
+    <div style={{ padding: 14, borderRadius: 12, border: `1px dashed ${V.accent}40`,
+      background: `linear-gradient(135deg, ${V.accent}08, ${V.accent2}08)`, textAlign: 'center' }}>
+      <div style={{ fontSize: 18, marginBottom: 6 }}>⭐</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: V.text, marginBottom: 4 }}>Premium Feature</div>
+      <div style={{ fontSize: 11, color: V.text3, marginBottom: 10, lineHeight: 1.5 }}>
+        {feature || 'This feature'} is available on NutritionLog Pro.
+      </div>
+      <Btn v="small" onClick={() => SuccessToastCtrl.show('Premium coming soon!')}>Upgrade to Pro</Btn>
+    </div>
+  );
+}
 
 export function TOSContent() {
   return (
@@ -101,6 +129,44 @@ export function SettingsTab({ s, d }) {
         <div style={{ fontSize: 13, color: V.text }}>{s.profile?.firstName} {s.profile?.lastName}</div>
         <div style={{ fontSize: 11, color: V.text3 }}>{email || "Not signed in"}</div>
       </Card>
+
+      {/* Premium upgrade card */}
+      {Flags.get('premiumTier') && !LS.get('nl-premium') && (
+        <div style={{
+          padding: 16, borderRadius: 14,
+          background: `linear-gradient(135deg, ${V.accent}20, ${V.accent2}15)`,
+          border: `1px solid ${V.accent}35`, position: 'relative', overflow: 'hidden',
+        }}
+          role="region" aria-label="Premium upgrade"
+        >
+          <div style={{ position: 'absolute', top: -20, right: -20, fontSize: 80, opacity: 0.07 }}>⭐</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 800, color: V.accent, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 4 }}>
+                NutritionLog Pro
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: V.text, marginBottom: 6 }}>
+                Unlock every feature
+              </div>
+              <div style={{ fontSize: 11, color: V.text2, lineHeight: 1.6 }}>
+                ✓ AI-powered meal recognition<br />
+                ✓ Barcode scanner (unlimited)<br />
+                ✓ Advanced micronutrient tracking<br />
+                ✓ Recipe URL import<br />
+                ✓ 7-day meal planner + grocery list<br />
+                ✓ Cloud sync + encrypted backup
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Btn onClick={() => SuccessToastCtrl.show('Premium coming soon — stay tuned!')}
+              style={{ background: `linear-gradient(135deg,${V.accent},${V.accent2})`, color: '#060a0e', fontWeight: 800, fontSize: 13 }}>
+              Upgrade — $4.99/mo
+            </Btn>
+            <div style={{ fontSize: 10, color: V.text3 }}>7-day free trial</div>
+          </div>
+        </div>
+      )}
 
       {/* Theme */}
       <Card style={{ padding: 14 }}>

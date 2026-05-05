@@ -6,7 +6,7 @@ import { SessionManager } from './utils/auth';
 import { SentryUtil } from './utils/sentry';
 import { Analytics } from './utils/analytics';
 import { today } from './utils/helpers';
-import { reducer, init } from './state/reducer';
+import { reducer, init } from './state/reducer.ts';
 import ErrorBoundary from './components/ErrorBoundary';
 import { GlobalConfirm, SuccessToast } from './components/ui';
 import { Onboarding } from './tabs/Onboarding';
@@ -16,6 +16,7 @@ import { BodyTab } from './tabs/BodyTab';
 import { TrendsTab } from './tabs/TrendsTab';
 import { CoachTab } from './tabs/CoachTab';
 import { SettingsTab } from './tabs/SettingsTab';
+import { PlanTab } from './tabs/PlanTab';
 
 const PERSIST_KEYS = [
   { key: 'nl-nutrition', stateKey: 'nutrition' },
@@ -101,7 +102,7 @@ export default function App() {
   const tabs = [
     { id: 'home', label: 'Home', icon: '🏠' },
     { id: 'log', label: 'Log', icon: '🍳' },
-    { id: 'coach', label: 'Coach', icon: '🤖' },
+    { id: 'plan', label: 'Plan', icon: '📅' },
     { id: 'trends', label: 'Trends', icon: '📈' },
     { id: 'settings', label: 'More', icon: '⚙️' },
   ];
@@ -115,7 +116,8 @@ export default function App() {
             {s.tab === 'home' && <HomeTab s={s} d={d} />}
             {s.tab === 'log' && <LogTab s={s} d={d} />}
             {s.tab === 'body' && <BodyTab s={s} d={d} />}
-            {s.tab === 'coach' && <CoachTab s={s} d={d} />}
+            {s.tab === 'coach' && <CoachTab s={s} d={d} dispatch={d} />}
+            {s.tab === 'plan' && <PlanTab s={s} d={d} />}
             {s.tab === 'trends' && <TrendsTab s={s} d={d} />}
             {s.tab === 'settings' && <SettingsTab s={s} d={d} />}
           </div>
