@@ -1,18 +1,34 @@
 // Analytics wrapper — PostHog-compatible interface
-// Drop-in PostHog SDK later; for now events go to console in dev and queue for batch send
+// Drop PostHog SDK in later; for now events queue locally and flush to any PostHog-compatible endpoint.
+
+interface AnalyticsPayload {
+  event: string;
+  distinctId: string;
+  timestamp: string;
+  properties: Record<string, unknown>;
+}
+
+declare global {
+  interface Window {
+    __posthog?: {
+      identify: (id: string, traits: Record<string, unknown>) => void;
+      capture: (event: string, props: Record<string, unknown>) => void;
+    };
+  }
+}
 
 const QUEUE_KEY = 'nl-analytics-queue';
 const MAX_QUEUE = 100;
 
-function getQueue() {
+function getQueue(): AnalyticsPayload[] {
   try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch { return []; }
 }
-function setQueue(q) {
+function setQueue(q: AnalyticsPayload[]): void {
   try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q.slice(-MAX_QUEUE))); } catch {}
 }
 
-let _distinctId = null;
-function getDistinctId() {
+let _distinctId: string | null = null;
+function getDistinctId(): string {
   if (_distinctId) return _distinctId;
   try {
     let id = localStorage.getItem('nl-analytics-id');
@@ -26,15 +42,13 @@ function getDistinctId() {
 }
 
 export const Analytics = {
-  identify: (userId, traits = {}) => {
+  identify: (userId: string, traits: Record<string, unknown> = {}): void => {
     _distinctId = userId;
-    if (typeof window.__posthog !== 'undefined') {
-      window.__posthog.identify(userId, traits);
-    }
+    window.__posthog?.identify(userId, traits);
   },
 
-  track: (event, properties = {}) => {
-    const payload = {
+  track: (event: string, properties: Record<string, unknown> = {}): void => {
+    const payload: AnalyticsPayload = {
       event,
       distinctId: getDistinctId(),
       timestamp: new Date().toISOString(),
@@ -47,12 +61,8 @@ export const Analytics = {
       },
     };
 
-    // Forward to PostHog if loaded
-    if (typeof window.__posthog !== 'undefined') {
-      window.__posthog.capture(event, payload.properties);
-    }
+    window.__posthog?.capture(event, payload.properties);
 
-    // Queue for batch send
     const queue = getQueue();
     queue.push(payload);
     setQueue(queue);
@@ -62,12 +72,11 @@ export const Analytics = {
     }
   },
 
-  page: (pageName) => {
+  page: (pageName: string): void => {
     Analytics.track('$pageview', { page: pageName });
   },
 
-  // Flush queue to a PostHog-compatible endpoint
-  flush: async (endpoint) => {
+  flush: async (endpoint: string): Promise<void> => {
     const queue = getQueue();
     if (!queue.length || !endpoint) return;
     try {

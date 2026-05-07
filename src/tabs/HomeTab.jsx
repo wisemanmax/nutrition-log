@@ -6,6 +6,7 @@ import { Icons } from '../components/Icons';
 import { FastingTimer } from '../components/FastingTimer';
 import { MoodLogger } from '../components/MoodLogger';
 import { today, ago } from '../utils/helpers';
+import { generateInsights } from './CoachTab';
 
 // --- Macro Ring ---
 function MacroRing({ value, goal, color, label }) {
@@ -40,6 +41,8 @@ function useNutritionStreak(nutrition) {
   }, [nutrition]);
 }
 
+const INSIGHT_COLORS = { success: V.accent, warning: V.warn, info: V.accent2 };
+
 export function HomeTab({ s, d }) {
   const streak = useNutritionStreak(s.nutrition);
   const td = today();
@@ -48,6 +51,11 @@ export function HomeTab({ s, d }) {
   const calGoal = s.goals?.cal || 2400, protGoal = s.goals?.protein || 180;
   const calRemaining = calGoal - tCal;
   const todayMeals = Array.isArray(todayN?.meals) ? todayN.meals : [];
+
+  const topInsight = useMemo(() => {
+    const all = generateInsights(s);
+    return all.length > 0 ? all[0] : null;
+  }, [s]);
 
   const waterCount = s.water?.[td] ?? parseInt(LS.get("nl-water-" + today())) ?? 0;
   const setWaterCount = (n) => { d({ type: 'SET_WATER', date: td, count: n }); LS.set("nl-water-" + td, n); };
@@ -68,6 +76,27 @@ export function HomeTab({ s, d }) {
         </div>
         <div>{Icons.leaf({ size: 24, color: V.accent })}</div>
       </div>
+
+      {/* Daily insight from AI Coach */}
+      {topInsight && (
+        <button
+          onClick={() => d({ type: 'TAB', tab: 'coach' })}
+          aria-label={`Coach insight: ${topInsight.title}. Tap to open coach.`}
+          style={{ all: 'unset', display: 'block', width: '100%', cursor: 'pointer', borderRadius: 12 }}
+        >
+          <Card style={{ padding: '10px 14px', borderLeft: `3px solid ${INSIGHT_COLORS[topInsight.type] || V.accent2}`, background: `${INSIGHT_COLORS[topInsight.type] || V.accent2}08` }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <span style={{ fontSize: 18, flexShrink: 0 }}>{topInsight.icon}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: INSIGHT_COLORS[topInsight.type] || V.accent2, marginBottom: 1 }}>Coach Insight</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: V.text, marginBottom: 2 }}>{topInsight.title}</div>
+                <div style={{ fontSize: 11, color: V.text3, lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{topInsight.body}</div>
+              </div>
+              <span style={{ fontSize: 14, color: V.text3, flexShrink: 0 }}>›</span>
+            </div>
+          </Card>
+        </button>
+      )}
 
       {/* Calorie Budget Card */}
       <Card style={{ padding: 16, background: `linear-gradient(135deg,${V.accent}10,${V.accent2}08)`, border: `1px solid ${V.accent}20` }}

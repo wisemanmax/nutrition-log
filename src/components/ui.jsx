@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useId } from 'react';
 import ReactDOM from 'react-dom';
 import { V } from '../utils/theme';
 import { Icons } from './Icons';
@@ -16,9 +16,10 @@ export function GlobalConfirm() {
   return ReactDOM.createPortal(
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9995, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,.7)", backdropFilter: "blur(4px)" }} onClick={() => ConfirmCtrl.clear()} />
-      <div role="alertdialog" aria-modal="true" style={{ position: "relative", background: V.sheetBg, borderRadius: 16, padding: 24, maxWidth: 320, width: "100%", border: `1px solid ${V.cardBorder}` }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: V.text, marginBottom: 6 }}>{state.msg}</div>
-        {state.detail && <div style={{ fontSize: 12, color: V.text3, lineHeight: 1.5, marginBottom: 16 }}>{state.detail}</div>}
+      <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby={state.detail ? "confirm-desc" : undefined}
+        style={{ position: "relative", background: V.sheetBg, borderRadius: 16, padding: 24, maxWidth: 320, width: "100%", border: `1px solid ${V.cardBorder}` }}>
+        <div id="confirm-title" style={{ fontSize: 15, fontWeight: 700, color: V.text, marginBottom: 6 }}>{state.msg}</div>
+        {state.detail && <div id="confirm-desc" style={{ fontSize: 12, color: V.text3, lineHeight: 1.5, marginBottom: 16 }}>{state.detail}</div>}
         <div style={{ display: "flex", gap: 10 }}>
           <Btn v="secondary" full onClick={() => ConfirmCtrl.clear()}>Cancel</Btn>
           <Btn full onClick={() => { state.onConfirm(); ConfirmCtrl.clear(); }} s={{ background: V.danger }}>Confirm</Btn>
@@ -38,12 +39,16 @@ export function SuccessToast() {
   const [msg, setMsg] = useState(null);
   useEffect(() => { _toastSet = setMsg; return () => { _toastSet = null; }; }, []);
   useEffect(() => { if (msg) { const t = setTimeout(() => setMsg(null), 2500); return () => clearTimeout(t); } }, [msg]);
-  if (!msg) return null;
   return ReactDOM.createPortal(
-    <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 9999,
-      padding: "10px 20px", borderRadius: 12, background: "rgba(74,222,128,0.15)", border: `1px solid ${V.accent}40`,
-      fontSize: 13, fontWeight: 600, color: V.accent, backdropFilter: "blur(10px)", animation: "fadeUp .3s ease" }}>
-      {msg}
+    <div role="status" aria-live="polite" aria-atomic="true"
+      style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 9999,
+        pointerEvents: "none", minWidth: msg ? "auto" : 0 }}>
+      {msg && (
+        <div style={{ padding: "10px 20px", borderRadius: 12, background: "rgba(74,222,128,0.15)", border: `1px solid ${V.accent}40`,
+          fontSize: 13, fontWeight: 600, color: V.accent, backdropFilter: "blur(10px)", animation: "fadeUp .3s ease", whiteSpace: "nowrap" }}>
+          {msg}
+        </div>
+      )}
     </div>,
     document.body
   );
@@ -62,7 +67,7 @@ export const Btn = ({ children, onClick, v = "primary", full, s, disabled, ...re
     ghost: { background: "transparent", color: V.accent, padding: "8px 12px" },
     small: { background: `${V.accent}10`, color: V.accent, padding: "6px 12px", fontSize: 11, borderRadius: 8, minHeight: 32 },
   };
-  return <button onClick={disabled ? undefined : onClick} style={{ ...base, ...variants[v], ...s }} disabled={disabled} {...rest}>{children}</button>;
+  return <button onClick={disabled ? undefined : onClick} style={{ ...base, ...variants[v], ...s }} disabled={disabled} aria-disabled={disabled || undefined} {...rest}>{children}</button>;
 };
 
 // --- Card ---
@@ -73,19 +78,24 @@ export const Card = ({ children, style, onClick }) => (
 );
 
 // --- Field ---
-export const Field = ({ label, type = "text", value, onChange, placeholder, unit, min, max, step, autoFocus, inputMode, style: wrapStyle }) => (
-  <div style={{ marginBottom: 12, ...wrapStyle }}>
-    {label && <div style={{ fontSize: 11, color: V.text3, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6, fontWeight: 600 }}>{label}</div>}
-    <div style={{ position: "relative" }}>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        min={min} max={max} step={step} autoFocus={autoFocus} inputMode={inputMode}
-        style={{ width: "100%", padding: "12px 14px", paddingRight: unit ? 44 : 14, background: "rgba(255,255,255,0.04)",
-          border: `1px solid ${V.cardBorder}`, borderRadius: 12, color: V.text, fontSize: 16, fontFamily: V.mono,
-          outline: "none", boxSizing: "border-box", WebkitAppearance: "none", minHeight: 44 }} />
-      {unit && <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: V.text3 }}>{unit}</span>}
+let _fieldCounter = 0;
+export const Field = ({ label, type = "text", value, onChange, placeholder, unit, min, max, step, autoFocus, inputMode, style: wrapStyle, id: idProp }) => {
+  const id = idProp || `field-${label ? label.toLowerCase().replace(/\s+/g, '-') : ++_fieldCounter}`;
+  return (
+    <div style={{ marginBottom: 12, ...wrapStyle }}>
+      {label && <label htmlFor={id} style={{ display: "block", fontSize: 11, color: V.text3, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6, fontWeight: 600 }}>{label}</label>}
+      <div style={{ position: "relative" }}>
+        <input id={id} type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+          min={min} max={max} step={step} autoFocus={autoFocus} inputMode={inputMode}
+          aria-label={label || placeholder}
+          style={{ width: "100%", padding: "12px 14px", paddingRight: unit ? 44 : 14, background: "rgba(255,255,255,0.04)",
+            border: `1px solid ${V.cardBorder}`, borderRadius: 12, color: V.text, fontSize: 16, fontFamily: V.mono,
+            outline: "none", boxSizing: "border-box", WebkitAppearance: "none", minHeight: 44 }} />
+        {unit && <span aria-hidden="true" style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: V.text3 }}>{unit}</span>}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // --- Progress ---
 export const Progress = ({ val, max, color = V.accent, h = 6 }) => (
@@ -97,6 +107,7 @@ export const Progress = ({ val, max, color = V.accent, h = 6 }) => (
 
 // --- Sheet ---
 export const Sheet = ({ title, onClose, children, footer }) => {
+  const titleId = `sheet-title-${Math.random().toString(36).slice(2, 7)}`;
   const isDesktop = window.innerWidth >= 768;
   return ReactDOM.createPortal(
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9990,
@@ -104,7 +115,7 @@ export const Sheet = ({ title, onClose, children, footer }) => {
       display: "flex", flexDirection: "column",
       ...(isDesktop ? { alignItems: "center", justifyContent: "center", backdropFilter: "blur(8px)" } : {}),
     }}
-      role="dialog" aria-modal="true" aria-label={title}
+      role="dialog" aria-modal="true" aria-labelledby={titleId}
       {...(isDesktop ? { onClick: (e) => { if (e.target === e.currentTarget) onClose(); } } : {})}>
       <div style={{
         display: "flex", flexDirection: "column",
@@ -116,12 +127,13 @@ export const Sheet = ({ title, onClose, children, footer }) => {
           paddingLeft: 16, paddingRight: 16, paddingBottom: 12, borderBottom: `1px solid ${V.cardBorder}`, background: V.sheetBg, zIndex: 2,
           ...(isDesktop ? { paddingTop: 16 } : {}),
         }}>
-          <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none",
+          <button onClick={onClose} aria-label="Close"
+            style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none",
             cursor: "pointer", padding: "8px 4px", WebkitTapHighlightColor: "transparent", flexShrink: 0 }}>
             {Icons.chevLeft({ size: 20, color: V.accent })}
             <span style={{ fontSize: 14, color: V.accent, fontWeight: 600 }}>Back</span>
           </button>
-          <h3 style={{ margin: 0, fontSize: 16, color: V.text, fontFamily: V.font, fontWeight: 700, flex: 1, textAlign: "center", paddingRight: 50 }}>{title}</h3>
+          <h3 id={titleId} style={{ margin: 0, fontSize: 16, color: V.text, fontFamily: V.font, fontWeight: 700, flex: 1, textAlign: "center", paddingRight: 50 }}>{title}</h3>
         </div>
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain", padding: 20 }}>
           {children}

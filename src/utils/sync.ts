@@ -1,41 +1,39 @@
 import { LS } from './storage';
-import { AuthToken } from './auth';
+import type { AppState } from '../types';
 
-export const SYNC_URL = LS.get("ft-api-url") || "https://api.ironlog.space";
-export const APP_VERSION = "nutritionlog-1.0";
+export const SYNC_URL: string = (LS.get<string>('ft-api-url')) || 'https://api.ironlog.space';
+export const APP_VERSION = 'nutritionlog-1.0';
 
-export let syncTimer = null;
 export let syncInFlight = false;
 
 // ─── Offline queue ────────────────────────────────────────────────────────────
-// Queues sync operations when offline. Replays them when connectivity restores.
+
+interface QueueEntry { ts: number; state: Partial<AppState> }
 const QUEUE_KEY = 'nl-sync-queue';
 
 const OfflineQueue = {
-  _pending: null,
+  _pending: null as QueueEntry[] | null,
 
-  load() {
-    if (!this._pending) this._pending = LS.get(QUEUE_KEY) || [];
-    return this._pending;
+  load(): QueueEntry[] {
+    if (!this._pending) this._pending = LS.get<QueueEntry[]>(QUEUE_KEY) || [];
+    return this._pending!;
   },
 
-  // Enqueue a state snapshot (we only keep the latest — older ones are stale)
-  enqueue(state) {
+  enqueue(state: Partial<AppState>): void {
     this._pending = [{ ts: Date.now(), state }];
     LS.set(QUEUE_KEY, this._pending);
   },
 
-  clear() {
+  clear(): void {
     this._pending = [];
     LS.set(QUEUE_KEY, []);
   },
 
-  hasPending() {
+  hasPending(): boolean {
     return this.load().length > 0;
   },
 
-  // Attempt to drain the queue. Returns true if successful.
-  async drain() {
+  async drain(): Promise<boolean> {
     const items = this.load();
     if (!items.length) return true;
     const latest = items[items.length - 1];
@@ -45,27 +43,25 @@ const OfflineQueue = {
   },
 };
 
-// Listen for online events to replay queued syncs
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
-    if (OfflineQueue.hasPending()) {
-      OfflineQueue.drain();
-    }
+    if (OfflineQueue.hasPending()) OfflineQueue.drain();
   });
 }
 
 // ─── Cloud Sync ───────────────────────────────────────────────────────────────
+
 export const CloudSync = {
-  _pushOnce: async (state) => {
-    const email = LS.get("ft-session-email");
-    const token = LS.get("ft-session-token");
+  _pushOnce: async (state: Partial<AppState>): Promise<boolean> => {
+    const email = LS.get<string>('ft-session-email');
+    const token = LS.get<string>('ft-session-token');
     if (!email || !token) return false;
     try {
       const payload = JSON.stringify({
         email,
-        deviceId: LS.get("ft-device-id") || "unknown",
+        deviceId: LS.get('ft-device-id') || 'unknown',
         appVersion: APP_VERSION,
-        app: "nutritionlog",
+        app: 'nutritionlog',
         workouts: [],
         nutrition: state.nutrition || [],
         body: state.body || [],
@@ -86,18 +82,16 @@ export const CloudSync = {
         },
       });
       const res = await fetch(`${SYNC_URL}/api/sync/push`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Session-Token": token },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Session-Token': token },
         body: payload,
         signal: AbortSignal.timeout(8000),
       });
       return res.ok;
-    } catch (e) {
-      return false;
-    }
+    } catch { return false; }
   },
 
-  push: async (state) => {
+  push: async (state: Partial<AppState>): Promise<void> => {
     if (syncInFlight) return;
     syncInFlight = true;
     try {
@@ -107,7 +101,6 @@ export const CloudSync = {
       }
       const ok = await CloudSync._pushOnce(state);
       if (!ok) {
-        // Network failure even though online — queue for retry
         OfflineQueue.enqueue(state);
       } else {
         OfflineQueue.clear();
@@ -118,21 +111,25 @@ export const CloudSync = {
   },
 
   debouncedPush: (() => {
-    let t = null;
-    return (state) => { clearTimeout(t); t = setTimeout(() => CloudSync.push(state), 5000); };
+    let t: ReturnType<typeof setTimeout> | null = null;
+    return (state: Partial<AppState>): void => {
+      if (t) clearTimeout(t);
+      t = setTimeout(() => CloudSync.push(state), 5000);
+    };
   })(),
 
-  pull: async (email, deviceId, pin) => {
+  pull: async (email: string, deviceId: string, pin: string): Promise<unknown> => {
     try {
-      const headers = { "Content-Type": "application/json" };
-      const token = LS.get("ft-session-token");
-      if (token) headers["X-Session-Token"] = token;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const token = LS.get<string>('ft-session-token');
+      if (token) headers['X-Session-Token'] = token;
       const res = await fetch(`${SYNC_URL}/api/sync/pull`, {
-        method: "POST", headers,
-        body: JSON.stringify({ email: email.toLowerCase(), deviceId, pin, app: "nutritionlog" }),
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ email: email.toLowerCase(), deviceId, pin, app: 'nutritionlog' }),
         signal: AbortSignal.timeout(8000),
       });
       return await res.json();
-    } catch (e) { return null; }
+    } catch { return null; }
   },
 };

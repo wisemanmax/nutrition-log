@@ -7,10 +7,169 @@ import { SessionManager } from '../utils/auth';
 import { ALLERGENS, DIETARY_MODES } from '../utils/allergens';
 import { RecipeBuilderSheet } from './RecipeBuilderSheet';
 import { Flags } from '../utils/flags';
+import { Analytics } from '../utils/analytics';
+import { SUPPORTED_LOCALES, getStoredLocale, setStoredLocale } from '../i18n';
+
+const PREMIUM_FEATURES = [
+  { icon: '🤖', label: 'AI Nutrition Coach', desc: 'Chat with Claude — personalized, data-driven advice' },
+  { icon: '📸', label: 'Photo Meal Recognition', desc: 'Snap a photo, AI identifies and logs your meal' },
+  { icon: '📊', label: 'Advanced Micronutrients', desc: 'Vitamins A–K, minerals, deep weekly deficiency reports' },
+  { icon: '🔗', label: 'Recipe URL Import', desc: 'Import any recipe from any website in one tap' },
+  { icon: '📅', label: '7-Day Meal Planner', desc: 'AI-generated weekly plan + auto grocery list' },
+  { icon: '☁️', label: 'Cloud Sync + Backup', desc: 'Encrypted sync across all your devices' },
+  { icon: '⌚', label: 'Apple Health / Google Fit', desc: 'Two-way sync with your health ecosystem' },
+  { icon: '📷', label: 'Unlimited Progress Photos', desc: 'Side-by-side timeline with privacy-first storage' },
+];
+
+const PLANS = [
+  { id: 'monthly', label: 'Monthly', price: '$7.99', period: 'per month', savings: null, highlight: false },
+  { id: 'annual', label: 'Annual', price: '$59.99', period: 'per year', savings: 'Save 37%', highlight: true },
+];
+
+// ─── Premium upgrade sheet ─────────────────────────────────────────────────────
+export function PremiumUpgradeSheet({ onClose }) {
+  const [selectedPlan, setSelectedPlan] = useState('annual');
+  const [step, setStep] = useState('plans'); // plans | payment | success
+  const [cardNum, setCardNum] = useState('');
+  const [cardExp, setCardExp] = useState('');
+  const [cardCvc, setCardCvc] = useState('');
+  const [processing, setProcessing] = useState(false);
+
+  const handleUpgrade = async () => {
+    if (!cardNum.trim() || !cardExp.trim() || !cardCvc.trim()) return;
+    setProcessing(true);
+    Analytics.track('premium_upgrade_initiated', { plan: selectedPlan });
+    await new Promise(r => setTimeout(r, 1800)); // mock processing
+    LS.set('nl-premium', true);
+    LS.set('nl-premium-plan', selectedPlan);
+    LS.set('nl-premium-since', new Date().toISOString());
+    Analytics.track('premium_upgrade_success', { plan: selectedPlan });
+    setProcessing(false);
+    setStep('success');
+  };
+
+  if (step === 'success') {
+    return (
+      <Sheet title="You're Pro! ⭐" onClose={onClose}>
+        <div style={{ textAlign: 'center', padding: '24px 16px' }}>
+          <div style={{ fontSize: 64, marginBottom: 16 }}>🎉</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: V.text, marginBottom: 8 }}>Welcome to NutritionLog Pro</div>
+          <div style={{ fontSize: 13, color: V.text3, lineHeight: 1.6, marginBottom: 24 }}>
+            All premium features are now unlocked. Restart the app to activate AI Coach and photo recognition.
+          </div>
+          <Btn full onClick={onClose}>Get Started</Btn>
+        </div>
+      </Sheet>
+    );
+  }
+
+  if (step === 'payment') {
+    return (
+      <Sheet title="Complete Upgrade" onClose={() => setStep('plans')}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ padding: 12, borderRadius: 12, background: `${V.accent}10`, border: `1px solid ${V.accent}20`, fontSize: 12, color: V.text2, textAlign: 'center' }}>
+            🔒 Payments powered by Stripe — your card is never stored on our servers
+          </div>
+          <div style={{ fontSize: 11, color: V.text3, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+            {selectedPlan === 'annual' ? 'Annual Plan — $59.99/year' : 'Monthly Plan — $7.99/month'}
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: V.text3, marginBottom: 4 }}>Card Number</div>
+            <input value={cardNum} onChange={e => setCardNum(e.target.value.replace(/\D/g, '').slice(0, 16))}
+              placeholder="1234 5678 9012 3456" inputMode="numeric"
+              style={{ width: '100%', padding: '12px 14px', background: 'rgba(255,255,255,0.05)', border: `1px solid ${V.cardBorder}`, borderRadius: 12, color: V.text, fontSize: 15, fontFamily: V.font, outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 11, color: V.text3, marginBottom: 4 }}>Expiry</div>
+              <input value={cardExp} onChange={e => setCardExp(e.target.value.replace(/[^\d/]/g, '').slice(0, 5))}
+                placeholder="MM/YY"
+                style={{ width: '100%', padding: '12px 14px', background: 'rgba(255,255,255,0.05)', border: `1px solid ${V.cardBorder}`, borderRadius: 12, color: V.text, fontSize: 15, fontFamily: V.font, outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: V.text3, marginBottom: 4 }}>CVC</div>
+              <input value={cardCvc} onChange={e => setCardCvc(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="123" inputMode="numeric"
+                style={{ width: '100%', padding: '12px 14px', background: 'rgba(255,255,255,0.05)', border: `1px solid ${V.cardBorder}`, borderRadius: 12, color: V.text, fontSize: 15, fontFamily: V.font, outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          <div style={{ fontSize: 10, color: V.text3, textAlign: 'center', lineHeight: 1.5 }}>
+            This is a demo — no real charge will occur. Cancel anytime from Settings.
+          </div>
+          <Btn full disabled={processing || cardNum.length < 16}
+            onClick={handleUpgrade}
+            style={{ background: `linear-gradient(135deg,${V.accent},${V.accent2})`, color: '#060a0e', fontWeight: 800 }}>
+            {processing ? 'Processing…' : `Start 7-Day Free Trial`}
+          </Btn>
+        </div>
+      </Sheet>
+    );
+  }
+
+  return (
+    <Sheet title="NutritionLog Pro ⭐" onClose={onClose}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Hero */}
+        <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
+          <div style={{ fontSize: 13, color: V.text3, lineHeight: 1.6 }}>
+            Unlock the full intelligence layer — AI coaching, photo logging, wearable sync, and more.
+          </div>
+        </div>
+
+        {/* Feature list */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {PREMIUM_FEATURES.map(f => (
+            <div key={f.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <span style={{ fontSize: 20, flexShrink: 0 }}>{f.icon}</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: V.text }}>{f.label}</div>
+                <div style={{ fontSize: 11, color: V.text3 }}>{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Plan selector */}
+        <div style={{ display: 'flex', gap: 8 }}>
+          {PLANS.map(plan => (
+            <button key={plan.id} onClick={() => setSelectedPlan(plan.id)}
+              aria-pressed={selectedPlan === plan.id}
+              style={{
+                flex: 1, padding: 12, borderRadius: 12, cursor: 'pointer',
+                border: `2px solid ${selectedPlan === plan.id ? V.accent : V.cardBorder}`,
+                background: selectedPlan === plan.id ? `${V.accent}12` : 'transparent',
+                textAlign: 'center', fontFamily: V.font, position: 'relative',
+              }}>
+              {plan.savings && (
+                <div style={{ position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%)', background: V.accent, color: '#060a0e', fontSize: 9, fontWeight: 800, padding: '2px 8px', borderRadius: 8 }}>
+                  {plan.savings}
+                </div>
+              )}
+              <div style={{ fontSize: 12, fontWeight: 700, color: V.text }}>{plan.label}</div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: selectedPlan === plan.id ? V.accent : V.text, fontFamily: V.mono }}>{plan.price}</div>
+              <div style={{ fontSize: 10, color: V.text3 }}>{plan.period}</div>
+            </button>
+          ))}
+        </div>
+
+        {/* Trial note */}
+        <div style={{ textAlign: 'center', fontSize: 11, color: V.text3 }}>
+          7-day free trial · Cancel anytime · No charge today
+        </div>
+
+        <Btn full onClick={() => { Analytics.track('premium_upgrade_started', { plan: selectedPlan }); setStep('payment'); }}
+          style={{ background: `linear-gradient(135deg,${V.accent},${V.accent2})`, color: '#060a0e', fontWeight: 800 }}>
+          Start Free Trial
+        </Btn>
+      </div>
+    </Sheet>
+  );
+}
 
 // ─── Feature gate component ───────────────────────────────────────────────────
 // Wraps premium-only content. When user is not premium, renders a paywall card.
 export function PremiumGate({ feature, children, compact = false }) {
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const isPremium = LS.get('nl-premium') === true;
   if (isPremium) return children;
   if (compact) {
@@ -23,15 +182,18 @@ export function PremiumGate({ feature, children, compact = false }) {
     );
   }
   return (
-    <div style={{ padding: 14, borderRadius: 12, border: `1px dashed ${V.accent}40`,
-      background: `linear-gradient(135deg, ${V.accent}08, ${V.accent2}08)`, textAlign: 'center' }}>
-      <div style={{ fontSize: 18, marginBottom: 6 }}>⭐</div>
-      <div style={{ fontSize: 13, fontWeight: 700, color: V.text, marginBottom: 4 }}>Premium Feature</div>
-      <div style={{ fontSize: 11, color: V.text3, marginBottom: 10, lineHeight: 1.5 }}>
-        {feature || 'This feature'} is available on NutritionLog Pro.
+    <>
+      <div style={{ padding: 14, borderRadius: 12, border: `1px dashed ${V.accent}40`,
+        background: `linear-gradient(135deg, ${V.accent}08, ${V.accent2}08)`, textAlign: 'center' }}>
+        <div style={{ fontSize: 18, marginBottom: 6 }}>⭐</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: V.text, marginBottom: 4 }}>Premium Feature</div>
+        <div style={{ fontSize: 11, color: V.text3, marginBottom: 10, lineHeight: 1.5 }}>
+          {feature || 'This feature'} is available on NutritionLog Pro.
+        </div>
+        <Btn v="small" onClick={() => setShowUpgrade(true)}>Upgrade to Pro</Btn>
       </div>
-      <Btn v="small" onClick={() => SuccessToastCtrl.show('Premium coming soon!')}>Upgrade to Pro</Btn>
-    </div>
+      {showUpgrade && <PremiumUpgradeSheet onClose={() => setShowUpgrade(false)} />}
+    </>
   );
 }
 
@@ -60,6 +222,8 @@ export function SettingsTab({ s, d }) {
   const [editingGoals, setEditingGoals] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState(null); // null | 'new' | recipe object
   const [goalDraft, setGoalDraft] = useState({ ...s.goals });
+  const [showUpgradeSheet, setShowUpgradeSheet] = useState(false);
+  const [locale, setLocale] = useState(getStoredLocale);
   const email = s.profile?.email || LS.get("ft-session-email");
 
   const toggleAllergen = (id) => {
@@ -159,14 +323,17 @@ export function SettingsTab({ s, d }) {
             </div>
           </div>
           <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Btn onClick={() => SuccessToastCtrl.show('Premium coming soon — stay tuned!')}
+            <Btn onClick={() => setShowUpgradeSheet(true)}
               style={{ background: `linear-gradient(135deg,${V.accent},${V.accent2})`, color: '#060a0e', fontWeight: 800, fontSize: 13 }}>
-              Upgrade — $4.99/mo
+              Upgrade — from $7.99/mo
             </Btn>
             <div style={{ fontSize: 10, color: V.text3 }}>7-day free trial</div>
           </div>
         </div>
       )}
+
+      {/* Premium upgrade sheet */}
+      {showUpgradeSheet && <PremiumUpgradeSheet onClose={() => setShowUpgradeSheet(false)} />}
 
       {/* Theme */}
       <Card style={{ padding: 14 }}>
@@ -298,6 +465,26 @@ export function SettingsTab({ s, d }) {
               </button>
             ))}
           </div>
+        </div>
+      </Card>
+
+      {/* Language */}
+      <Card style={{ padding: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 10 }}>Language</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {SUPPORTED_LOCALES.map(l => (
+            <button key={l.id} onClick={() => { setStoredLocale(l.id); setLocale(l.id); SuccessToastCtrl.show(`Language set to ${l.label}`); Analytics.track('locale_changed', { locale: l.id }); }}
+              aria-pressed={locale === l.id}
+              style={{ flex: 1, padding: "8px 4px", borderRadius: 10, border: `1px solid ${locale === l.id ? V.accent : V.cardBorder}`,
+                background: locale === l.id ? `${V.accent}12` : "transparent", color: locale === l.id ? V.accent : V.text3,
+                fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: V.font, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+              <span style={{ fontSize: 18 }}>{l.flag}</span>
+              <span>{l.label}</span>
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: 10, color: V.text3, marginTop: 8, textAlign: "center" }}>
+          Full translations in progress — some text may still show in English
         </div>
       </Card>
 

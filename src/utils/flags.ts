@@ -1,5 +1,6 @@
-// Feature flags — can be overridden by a remote config row in Supabase later
-const DEFAULT_FLAGS = {
+import type { FeatureFlags } from '../types';
+
+const DEFAULT_FLAGS: FeatureFlags = {
   barcodeScanning: true,
   aiCoach: false,           // Q3 — requires Claude API key
   photoRecognition: false,  // Q3 — requires Claude Vision
@@ -12,28 +13,24 @@ const DEFAULT_FLAGS = {
   mealPlanning: true,       // Q4 — client-side planner
 };
 
-let _flags = { ...DEFAULT_FLAGS };
+let _flags: FeatureFlags = { ...DEFAULT_FLAGS };
 
 export const Flags = {
-  // Get all flags (merged with any runtime overrides)
-  all: () => ({ ..._flags }),
+  all: (): FeatureFlags => ({ ..._flags }),
 
-  // Check a single flag
-  get: (name) => _flags[name] ?? false,
+  get: (name: keyof FeatureFlags): boolean => _flags[name] ?? false,
 
-  // Override at runtime (e.g. from a remote config fetch)
-  override: (overrides) => {
+  override: (overrides: Partial<FeatureFlags>): void => {
     _flags = { ..._flags, ...overrides };
   },
 
-  // Load remote flags from a URL (fire-and-forget, best-effort)
-  loadRemote: async (url) => {
+  loadRemote: async (url: string): Promise<void> => {
     if (!url) return;
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
       if (!res.ok) return;
-      const remote = await res.json();
+      const remote = await res.json() as Partial<FeatureFlags>;
       Flags.override(remote);
-    } catch { /* network failure is fine — use defaults */ }
+    } catch { /* network failure — use defaults */ }
   },
 };
