@@ -155,6 +155,7 @@ export interface AppState {
   recipes: Recipe[];
   favorites: string[];
   recents: FoodItem[];
+  frequencyMap: Record<string, number>; // foodId → log count
   templates: MealTemplate[];
   fasting: FastingState | null;
   loaded: boolean;

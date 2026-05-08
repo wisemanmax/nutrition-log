@@ -5,7 +5,9 @@ import {
   detectPlateau,
   generateProjection,
   getMicronutrientReport,
-} from '../utils/predictions';
+  estimateTDEEInterval,
+  getMacroCyclingSuggestion,
+} from '../utils/predictions.ts';
 
 const makeBodyEntry = (date: string, weight: number) => ({
   id: date, date, weight, bodyFat: null, neck: null, waist: null, hip: null,
@@ -132,5 +134,57 @@ describe('getMicronutrientReport', () => {
     const report = getMicronutrientReport(data, { protein: 180 });
     const protRow = report.find(r => r.nutrient === 'Protein')!;
     expect(protRow.status).toBe('deficient');
+  });
+});
+
+describe('estimateTDEEInterval', () => {
+  it('returns null when TDEE cannot be estimated', () => {
+    expect(estimateTDEEInterval([], [], 'lbs')).toBeNull();
+  });
+
+  it('returns [low, high] with low < high', () => {
+    const body = [makeBodyEntry('2025-01-01', 180), makeBodyEntry('2025-02-01', 180)];
+    const nutrition = Array.from({ length: 30 }, (_, i) => {
+      const d = new Date('2025-01-01'); d.setDate(d.getDate() + i);
+      return makeDayEntry(d.toISOString().split('T')[0], { cal: 2200 });
+    });
+    const interval = estimateTDEEInterval(nutrition, body, 'lbs');
+    expect(interval).not.toBeNull();
+    expect(interval![0]).toBeLessThan(interval![1]);
+  });
+
+  it('interval spans roughly 20% of TDEE value (±10%)', () => {
+    const body = [makeBodyEntry('2025-01-01', 180), makeBodyEntry('2025-02-01', 180)];
+    const nutrition = Array.from({ length: 30 }, (_, i) => {
+      const d = new Date('2025-01-01'); d.setDate(d.getDate() + i);
+      return makeDayEntry(d.toISOString().split('T')[0], { cal: 2200 });
+    });
+    const interval = estimateTDEEInterval(nutrition, body, 'lbs')!;
+    const span = interval[1] - interval[0];
+    // Span should be ~20% of TDEE (~440 kcal) — allow ±50 kcal for rounding
+    expect(span).toBeGreaterThan(350);
+    expect(span).toBeLessThan(500);
+  });
+});
+
+describe('getMacroCyclingSuggestion', () => {
+  it('returns null when TDEE is 0', () => {
+    expect(getMacroCyclingSuggestion({ cal: 2400 }, 2200, 0)).toBeNull();
+  });
+
+  it('training day has more calories than rest day', () => {
+    const s = getMacroCyclingSuggestion({ cal: 2400, protein: 180, fat: 70, carbs: 250 }, 2300, 2500);
+    expect(s).not.toBeNull();
+    expect(s!.training.cal!).toBeGreaterThan(s!.rest.cal!);
+  });
+
+  it('protein is equal on training and rest days', () => {
+    const s = getMacroCyclingSuggestion({ cal: 2400, protein: 180, fat: 70 }, 2300, 2500);
+    expect(s!.training.protein).toBe(s!.rest.protein);
+  });
+
+  it('rest day is not below 1200 kcal', () => {
+    const s = getMacroCyclingSuggestion({ cal: 1400, protein: 130, fat: 60 }, 1300, 1600);
+    expect(s!.rest.cal!).toBeGreaterThanOrEqual(1200);
   });
 });

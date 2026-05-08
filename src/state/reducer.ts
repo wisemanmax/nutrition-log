@@ -1,6 +1,14 @@
 import type { AppState, Action, NutritionDay, MealSection, FoodItem } from '../types';
 import { uid } from '../utils/helpers';
 
+/** Increment the log-count for a food item in the frequency map. */
+function incrementFrequency(
+  freqMap: Record<string, number> = {},
+  item: FoodItem,
+): Record<string, number> {
+  return { ...freqMap, [item.id]: (freqMap[item.id] ?? 0) + 1 };
+}
+
 export const MEAL_SECTIONS = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
 
 const defaultMeals = (): MealSection[] =>
@@ -15,6 +23,7 @@ export const init: AppState = {
   recipes: [],
   favorites: [],
   recents: [],
+  frequencyMap: {},  // { [foodId]: logCount }
   templates: [],
   fasting: null,
   loaded: false,
@@ -92,7 +101,12 @@ export function reducer(s: AppState, a: Action): AppState {
             : m,
         ),
       }));
-      return { ...s, nutrition, recents: addToRecents(s.recents, a.item) };
+      return {
+        ...s,
+        nutrition,
+        recents: addToRecents(s.recents, a.item),
+        frequencyMap: incrementFrequency(s.frequencyMap, a.item),
+      };
     }
     case 'EDIT_MEAL_ITEM': {
       const nutrition = updateDay(s.nutrition, a.date, day => ({

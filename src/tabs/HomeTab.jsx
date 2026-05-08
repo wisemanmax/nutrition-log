@@ -6,6 +6,7 @@ import { Icons } from '../components/Icons';
 import { FastingTimer } from '../components/FastingTimer';
 import { MoodLogger } from '../components/MoodLogger';
 import { today, ago } from '../utils/helpers';
+import { estimateTDEE, detectPlateau } from '../utils/predictions';
 
 // --- Macro Ring ---
 function MacroRing({ value, goal, color, label }) {
@@ -28,6 +29,75 @@ function MacroRing({ value, goal, color, label }) {
       </div>
       <div style={{ fontSize: 8, color: V.text3, fontWeight: 600 }}>{label}</div>
     </div>
+  );
+}
+
+// --- Coach Insight Card ---
+function CoachInsightCard({ s }) {
+  const insight = useMemo(() => {
+    const nutrition = s.nutrition || [];
+    const goals = s.goals || {};
+    const body = s.body || [];
+    const last7 = Array.from({ length: 7 }, (_, i) => ago(i))
+      .map(d => nutrition.find(n => n.date === d))
+      .filter(Boolean);
+
+    if (last7.length < 3) return null;
+
+    const avg = (key) => {
+      const vals = last7.filter(d => d[key] > 0);
+      return vals.length ? Math.round(vals.reduce((s, d) => s + d[key], 0) / vals.length) : 0;
+    };
+
+    const calGoal  = goals.cal || 2400;
+    const protGoal = goals.protein || 180;
+    const avgCal   = avg('cal');
+    const avgProt  = avg('protein');
+    const deficit  = calGoal - avgCal;
+
+    // Priority-ordered checks
+    if (avgProt > 0 && avgProt < protGoal * 0.75) {
+      return { icon: '💪', color: V.warn, title: 'Protein gap',
+        body: `Avg ${avgProt}g vs ${protGoal}g goal — ${protGoal - avgProt}g short. Add Greek yogurt or chicken.` };
+    }
+    if (deficit > 500) {
+      return { icon: '⚡', color: V.danger, title: 'Large calorie deficit',
+        body: `Avg ${Math.abs(deficit)} kcal below goal. Sustained deficits over 500 kcal risk muscle loss.` };
+    }
+    if (detectPlateau(body, s.units, 14)) {
+      return { icon: '📊', color: V.accent2, title: 'Weight plateau',
+        body: 'Weight stable 2+ weeks. Try a diet break at maintenance or vary training intensity.' };
+    }
+    if (last7.length < 5) {
+      return { icon: '📝', color: V.accent, title: 'Log more consistently',
+        body: `Logged ${last7.length}/7 days. Consistent tracking is the #1 predictor of goal success.` };
+    }
+    if (avgProt >= protGoal) {
+      return { icon: '🎯', color: V.accent, title: 'Protein goal met!',
+        body: `Averaging ${avgProt}g — on track. Keep it up to preserve muscle.` };
+    }
+
+    const tdee = estimateTDEE(nutrition, body, s.units || 'lbs');
+    if (tdee && Math.abs(tdee - calGoal) > 200) {
+      return { icon: '🧮', color: V.accent2, title: 'Goal calibration available',
+        body: `Estimated TDEE ~${tdee} kcal. Open Coach tab for details.` };
+    }
+    return null;
+  }, [s]);
+
+  if (!insight) return null;
+
+  return (
+    <Card style={{ padding: 12, borderLeft: `3px solid ${insight.color}` }}
+      role="region" aria-label={`Coach insight: ${insight.title}`}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <span style={{ fontSize: 20, flexShrink: 0 }} aria-hidden="true">{insight.icon}</span>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: insight.color, marginBottom: 2 }}>{insight.title}</div>
+          <div style={{ fontSize: 11, color: V.text2, lineHeight: 1.5 }}>{insight.body}</div>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -102,6 +172,9 @@ export function HomeTab({ s, d }) {
           </div>
         </Card>
       )}
+
+      {/* Coach insight */}
+      <CoachInsightCard s={s} />
 
       {/* Quick log button */}
       <Btn full onClick={() => d({ type: "TAB", tab: "log" })}>
