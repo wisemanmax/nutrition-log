@@ -9,6 +9,7 @@ import { MEAL_SECTIONS } from '../state/reducer.ts';
 import { Analytics } from '../utils/analytics';
 import { Flags } from '../utils/flags';
 import { hasAllergenConflict } from '../utils/allergens';
+import { computeFrequents } from '../utils/frequents';
 
 // ─── Debounce hook ────────────────────────────────────────────────────────────
 
@@ -81,15 +82,75 @@ function VoiceLogButton({ onVoiceResult }) {
   );
 }
 
+// ─── Photo meal recognition (flag: photoMealLog) ─────────────────────────────
+
+function PhotoLogButton({ onResults }) {
+  const [status, setStatus] = useState('idle'); // idle | capturing | analyzing | error
+  const inputRef = useRef(null);
+
+  if (!Flags.get('photoMealLog')) return null;
+
+  const handleCapture = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setStatus('analyzing');
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      Analytics.track('photo_meal_started', { size: file.size });
+      const res = await fetch('/api/photo-meal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64, mediaType: file.type }),
+      });
+      if (!res.ok) throw new Error('API error');
+      const data = await res.json();
+      onResults(data.items || []);
+      Analytics.track('photo_meal_success', { itemCount: (data.items || []).length });
+    } catch {
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 2500);
+    } finally {
+      if (inputRef.current) inputRef.current.value = '';
+      setStatus('idle');
+    }
+  };
+
+  return (
+    <>
+      <input ref={inputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleCapture} aria-hidden="true" />
+      <button
+        onClick={() => inputRef.current?.click()}
+        disabled={status === 'analyzing'}
+        aria-label={status === 'analyzing' ? 'Analyzing meal photo…' : 'Log meal from photo'}
+        title="Photo meal log"
+        style={{
+          width: 44, height: 44, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center',
+          justifyContent: 'center', cursor: status === 'analyzing' ? 'default' : 'pointer',
+          border: `1px solid ${status === 'error' ? V.danger : V.cardBorder}`,
+          background: status === 'analyzing' ? `${V.accent}15` : 'rgba(255,255,255,0.05)', fontSize: 18,
+        }}
+      >
+        {status === 'analyzing' ? <div style={{ width: 16, height: 16, border: `2px solid ${V.accent}30`, borderTopColor: V.accent, borderRadius: '50%', animation: 'spin .6s linear infinite' }} /> : '🍽️'}
+      </button>
+    </>
+  );
+}
+
 // ─── Food Search Sheet ────────────────────────────────────────────────────────
 
-function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allFoods = [], onToggleFavorite, userAllergens = [] }) {
+function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allFoods = [], frequents = [], onToggleFavorite, userAllergens = [] }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('search'); // search | recents | favorites
+  const [activeTab, setActiveTab] = useState('search'); // search | recents | favorites | frequents
   const [showBarcode, setShowBarcode] = useState(false);
   const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [photoResults, setPhotoResults] = useState(null); // null | FoodItem[]
   const debouncedQuery = useDebounce(query, 350);
   const inputRef = useRef(null);
 
@@ -128,6 +189,8 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
 
   const displayList = activeTab === 'recents' ? recents
     : activeTab === 'favorites' ? allFoods.filter(f => favorites.includes(f.id))
+    : activeTab === 'frequents' ? frequents
+    : activeTab === 'photo' ? []
     : results;
 
   if (showBarcode) {
@@ -166,16 +229,35 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
         )}
 
         <VoiceLogButton onVoiceResult={handleVoiceResult} />
+        <PhotoLogButton onResults={(items) => { setPhotoResults(items); setActiveTab('photo'); }} />
       </div>
+
+      {/* Photo recognition results confirmation */}
+      {activeTab === 'photo' && photoResults && (
+        <div style={{ marginBottom: 12, background: `${V.accent}08`, border: `1px solid ${V.accent}20`, borderRadius: 12, padding: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: V.accent, marginBottom: 8 }}>🍽️ AI recognized {photoResults.length} item{photoResults.length !== 1 ? 's' : ''} — confirm before logging</div>
+          {photoResults.length === 0 && <div style={{ fontSize: 12, color: V.text3 }}>No items recognized. Try a clearer photo.</div>}
+          {photoResults.map((food, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${V.cardBorder}` }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: V.text }}>{food.name}</div>
+                <div style={{ fontSize: 10, color: V.text3 }}>{food.cal} kcal · {food.protein}P · {food.carbs}C · {food.fat}F</div>
+              </div>
+              <Btn style={{ padding: '5px 10px', fontSize: 11 }} onClick={() => { onSelect(food); Analytics.track('photo_meal_item_logged', { name: food.name }); }}>Log</Btn>
+            </div>
+          ))}
+          <button onClick={() => { setPhotoResults(null); setActiveTab('search'); }} style={{ marginTop: 8, fontSize: 11, color: V.text3, background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div role="tablist" style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-        {[['search', 'Search'], ['recents', 'Recents'], ['favorites', '★ Saved']].map(([id, label]) => (
+        {[['search', 'Search'], ['frequents', '🔁 Often'], ['recents', 'Recents'], ['favorites', '★ Saved']].map(([id, label]) => (
           <button key={id} role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)}
             style={{
-              flex: 1, padding: '7px 4px', borderRadius: 10, border: `1px solid ${activeTab === id ? V.accent : V.cardBorder}`,
+              flex: 1, padding: '7px 2px', borderRadius: 10, border: `1px solid ${activeTab === id ? V.accent : V.cardBorder}`,
               background: activeTab === id ? `${V.accent}12` : 'transparent', color: activeTab === id ? V.accent : V.text3,
-              fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: V.font,
+              fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: V.font,
             }}>
             {label}
           </button>
@@ -190,6 +272,12 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
               <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
               <div style={{ fontSize: 13 }}>Search 1.4M+ USDA foods</div>
               <div style={{ fontSize: 11, marginTop: 6 }}>Or scan a barcode{Flags.get('voiceLog') ? ' or speak your food' : ''}</div>
+            </div>
+          ) : activeTab === 'frequents' ? (
+            <div>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🔁</div>
+              <div style={{ fontSize: 13 }}>No frequent foods yet</div>
+              <div style={{ fontSize: 11, marginTop: 6 }}>Foods you log often will appear here</div>
             </div>
           ) : (
             <div style={{ fontSize: 13 }}>No results found</div>
@@ -468,6 +556,8 @@ export function LogTab({ s, d }) {
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
 
+  const frequents = useCallback(() => computeFrequents(s.nutrition || [], 10), [s.nutrition])();
+
   const dayData = s.nutrition.find(n => n.date === viewDate);
   const meals = dayData?.meals || MEAL_SECTIONS.map(name => ({ name, items: [] }));
 
@@ -623,6 +713,7 @@ export function LogTab({ s, d }) {
           onClose={() => setAddingToSection(null)}
           recents={s.recents || []}
           favorites={s.favorites || []}
+          frequents={frequents}
           allFoods={s.recents || []}
           onToggleFavorite={(foodId) => d({ type: 'TOGGLE_FAVORITE', foodId })}
           userAllergens={s.profile?.allergens || []}

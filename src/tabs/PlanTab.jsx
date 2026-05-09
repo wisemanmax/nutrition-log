@@ -3,6 +3,8 @@ import { V, Haptic } from '../utils/theme';
 import { Card, Btn, Sheet, SuccessToastCtrl } from '../components/ui';
 import { uid } from '../utils/helpers';
 import { LS } from '../utils/storage';
+import { Flags } from '../utils/flags';
+import { Analytics } from '../utils/analytics';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -68,6 +70,127 @@ function entryMacros(entry, recipes) {
   }
   if (entry.macros) return entry.macros;
   return null;
+}
+
+// Categorize grocery items by store section using keyword matching
+const STORE_SECTIONS = {
+  'Produce': ['apple', 'banana', 'berry', 'broccoli', 'carrot', 'spinach', 'lettuce', 'tomato', 'avocado', 'onion', 'garlic', 'pepper', 'cucumber', 'zucchini', 'kale', 'lemon', 'lime', 'orange', 'grape', 'strawberry', 'blueberry'],
+  'Meat & Fish': ['chicken', 'beef', 'turkey', 'pork', 'salmon', 'tuna', 'shrimp', 'fish', 'steak', 'bacon', 'sausage', 'lamb', 'ground'],
+  'Dairy & Eggs': ['milk', 'egg', 'cheese', 'yogurt', 'butter', 'cream', 'cottage', 'mozzarella', 'cheddar', 'parmesan'],
+  'Pantry': ['oats', 'rice', 'pasta', 'bread', 'flour', 'sugar', 'salt', 'oil', 'vinegar', 'sauce', 'can', 'beans', 'lentil', 'quinoa', 'nut', 'almond', 'peanut', 'cashew', 'seed'],
+  'Frozen': ['frozen', 'ice cream', 'edamame'],
+  'Beverages': ['water', 'juice', 'coffee', 'tea', 'protein powder', 'shake'],
+};
+
+function categorizeItem(name) {
+  const lower = name.toLowerCase();
+  for (const [section, keywords] of Object.entries(STORE_SECTIONS)) {
+    if (keywords.some(k => lower.includes(k))) return section;
+  }
+  return 'Other';
+}
+
+function groupBySection(items) {
+  const grouped = {};
+  items.forEach(item => {
+    const section = categorizeItem(item.name);
+    if (!grouped[section]) grouped[section] = [];
+    grouped[section].push(item);
+  });
+  const order = ['Produce', 'Meat & Fish', 'Dairy & Eggs', 'Pantry', 'Frozen', 'Beverages', 'Other'];
+  return order.filter(s => grouped[s]).map(s => ({ section: s, items: grouped[s] }));
+}
+
+async function callAIMealPlan(goals, dietaryModes, allergens, daysCount = 7) {
+  try {
+    const res = await fetch('/api/meal-plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goals, dietaryModes, allergens, daysCount }),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+// ─── AI meal plan generation sheet ───────────────────────────────────────────
+
+function AIMealPlanSheet({ s, onApplyPlan, onClose }) {
+  const [generating, setGenerating] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const goals = s.goals || {};
+  const dietaryModes = s.profile?.dietaryModes || [];
+  const allergens = s.profile?.allergens || [];
+
+  const generate = async () => {
+    setGenerating(true);
+    Analytics.track('ai_meal_plan_started', { dietaryModes, allergens });
+    const result = await callAIMealPlan(goals, dietaryModes, allergens, 7);
+    if (result?.plan) {
+      setPreview(result);
+      Analytics.track('ai_meal_plan_success', {});
+    } else {
+      SuccessToastCtrl.show('AI plan generation failed — try again');
+    }
+    setGenerating(false);
+  };
+
+  return (
+    <Sheet title="✨ AI Meal Planner" onClose={onClose}
+      footer={preview ? (
+        <div style={{ padding: 16, display: 'flex', gap: 8 }}>
+          <Btn full onClick={() => { onApplyPlan(preview.plan); onClose(); SuccessToastCtrl.show('AI plan applied!'); }}>Apply Plan</Btn>
+          <Btn v="secondary" onClick={() => { setPreview(null); }}>Regenerate</Btn>
+        </div>
+      ) : null}
+    >
+      {!preview ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ fontSize: 13, color: V.text2, lineHeight: 1.6 }}>
+            Claude will generate a personalized 7-day meal plan honoring your calorie goals, dietary preferences, and allergen restrictions.
+          </div>
+          <div style={{ padding: 12, borderRadius: 10, background: `${V.accent}08`, border: `1px solid ${V.accent}20` }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, marginBottom: 6 }}>Your plan will respect:</div>
+            <div style={{ fontSize: 12, color: V.text2, lineHeight: 1.8 }}>
+              • <strong style={{ color: V.warn }}>{goals.cal || 2400} kcal/day</strong> calorie target<br />
+              • <strong style={{ color: V.accent }}>{goals.protein || 180}g protein</strong> goal<br />
+              {dietaryModes.length > 0 && <><strong>{dietaryModes.join(', ')}</strong> dietary mode(s)<br /></>}
+              {allergens.length > 0 && <><strong style={{ color: V.danger }}>Avoiding: {allergens.join(', ')}</strong></>}
+            </div>
+          </div>
+          <Btn full disabled={generating} onClick={generate}
+            style={{ background: `linear-gradient(135deg,${V.accent},${V.accent2})`, color: '#060a0e', fontWeight: 800 }}>
+            {generating ? '✨ Generating plan…' : '✨ Generate 7-Day Plan'}
+          </Btn>
+          {!Flags.get('aiMealPlan') && (
+            <div style={{ fontSize: 11, color: V.text3, textAlign: 'center' }}>AI meal planning requires the premium plan</div>
+          )}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 11, color: V.accent, fontWeight: 700 }}>Preview — {DAYS.length}-day plan generated</div>
+          {Object.entries(preview.plan).slice(0, 7).map(([date, dayPlan]) => (
+            <div key={date} style={{ borderBottom: `1px solid ${V.cardBorder}`, paddingBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, marginBottom: 4 }}>{date}</div>
+              {SLOTS.map(slot => dayPlan[slot] ? (
+                <div key={slot} style={{ fontSize: 12, color: V.text2, marginBottom: 2 }}>
+                  <span style={{ color: V.text3 }}>{SLOT_ICONS[slot]} </span>{dayPlan[slot].name}
+                  {dayPlan[slot].macros?.cal ? <span style={{ color: V.text3 }}> · {dayPlan[slot].macros.cal} kcal</span> : ''}
+                </div>
+              ) : null)}
+            </div>
+          ))}
+          {preview.groceryList?.length > 0 && (
+            <div style={{ fontSize: 11, color: V.text3 }}>
+              Auto-generated grocery list: {preview.groceryList.length} items
+            </div>
+          )}
+        </div>
+      )}
+    </Sheet>
+  );
 }
 
 // ─── Slot picker sheet ────────────────────────────────────────────────────────
@@ -221,15 +344,27 @@ function GroceryListSheet({ groceryItems, onClose }) {
 
   const toggle = (name) => setChecked(c => ({ ...c, [name]: !c[name] }));
 
-  const unchecked = groceryItems.filter(i => !checked[i.name]);
+  const uncheckedItems = groceryItems.filter(i => !checked[i.name]);
   const checkedItems = groceryItems.filter(i => checked[i.name]);
+  const grouped = useMemo(() => groupBySection(uncheckedItems), [uncheckedItems]);
 
   const copyToClipboard = () => {
-    const text = unchecked.map(i => `□ ${i.name}`).join('\n');
+    const text = uncheckedItems.map(i => `□ ${i.name}`).join('\n');
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text).then(() => SuccessToastCtrl.show('Copied to clipboard'));
     }
   };
+
+  const GroceryRow = ({ item }) => (
+    <button key={item.name} onClick={() => toggle(item.name)}
+      aria-label={`Mark ${item.name} as bought`}
+      style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 12px', borderRadius: 10, border: `1px solid ${V.cardBorder}`,
+        background: V.card, cursor: 'pointer', fontFamily: V.font }}>
+      <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${V.cardBorder}`, flexShrink: 0 }} />
+      <span style={{ fontSize: 13, color: V.text }}>{item.name}</span>
+    </button>
+  );
 
   return (
     <Sheet title="🛒 Grocery List" onClose={onClose}
@@ -247,35 +382,37 @@ function GroceryListSheet({ groceryItems, onClose }) {
       ) : (
         <>
           <div style={{ fontSize: 10, color: V.text3, marginBottom: 10 }}>
-            {unchecked.length} items remaining
+            {uncheckedItems.length} item{uncheckedItems.length !== 1 ? 's' : ''} remaining
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {unchecked.map(item => (
-              <button key={item.name} onClick={() => toggle(item.name)}
-                aria-label={`Mark ${item.name} as bought`}
-                style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '10px 12px', borderRadius: 10, border: `1px solid ${V.cardBorder}`,
-                  background: V.card, cursor: 'pointer', fontFamily: V.font }}>
-                <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${V.cardBorder}`, flexShrink: 0 }} />
-                <span style={{ fontSize: 13, color: V.text }}>{item.name}</span>
-              </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {grouped.map(({ section, items }) => (
+              <div key={section}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: V.text3, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>
+                  {section}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {items.map(item => <GroceryRow key={item.name} item={item} />)}
+                </div>
+              </div>
             ))}
             {checkedItems.length > 0 && (
               <>
-                <div style={{ fontSize: 10, color: V.text3, margin: '8px 0 4px', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                <div style={{ fontSize: 10, color: V.text3, textTransform: 'uppercase', letterSpacing: '.06em' }}>
                   Done ({checkedItems.length})
                 </div>
-                {checkedItems.map(item => (
-                  <button key={item.name} onClick={() => toggle(item.name)}
-                    aria-label={`Unmark ${item.name}`}
-                    style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '10px 12px', borderRadius: 10, border: `1px solid ${V.cardBorder}20`,
-                      background: 'transparent', cursor: 'pointer', fontFamily: V.font }}>
-                    <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${V.accent}`, background: `${V.accent}30`, flexShrink: 0,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: V.accent }}>✓</div>
-                    <span style={{ fontSize: 13, color: V.text3, textDecoration: 'line-through' }}>{item.name}</span>
-                  </button>
-                ))}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {checkedItems.map(item => (
+                    <button key={item.name} onClick={() => toggle(item.name)}
+                      aria-label={`Unmark ${item.name}`}
+                      style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '10px 12px', borderRadius: 10, border: `1px solid ${V.cardBorder}20`,
+                        background: 'transparent', cursor: 'pointer', fontFamily: V.font }}>
+                      <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${V.accent}`, background: `${V.accent}30`, flexShrink: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: V.accent }}>✓</div>
+                      <span style={{ fontSize: 13, color: V.text3, textDecoration: 'line-through' }}>{item.name}</span>
+                    </button>
+                  ))}
+                </div>
               </>
             )}
           </div>
@@ -293,6 +430,7 @@ export function PlanTab({ s }) {
   const [plan, setPlan] = useState(loadPlan);
   const [pickingSlot, setPickingSlot] = useState(null); // { date, slot }
   const [showGrocery, setShowGrocery] = useState(false);
+  const [showAIPlan, setShowAIPlan] = useState(false);
 
   const recipes = s.recipes || [];
   const templates = s.templates || [];
@@ -321,6 +459,14 @@ export function PlanTab({ s }) {
       return next;
     });
     setPickingSlot(null);
+  }, []);
+
+  const applyAIPlan = useCallback((aiPlan) => {
+    setPlan(prev => {
+      const next = { ...prev, ...aiPlan };
+      savePlan(next);
+      return next;
+    });
   }, []);
 
   const clearDay = (date) => {
@@ -359,6 +505,13 @@ export function PlanTab({ s }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 18, fontWeight: 800, color: V.text }}>Meal Plan</div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {Flags.get('aiMealPlan') && (
+            <Btn v="ghost" onClick={() => setShowAIPlan(true)}
+              aria-label="Generate AI meal plan"
+              style={{ padding: '6px 10px', fontSize: 12, border: `1px solid ${V.accent}30`, color: V.accent }}>
+              ✨ AI Plan
+            </Btn>
+          )}
           <Btn v="ghost" onClick={() => setShowGrocery(true)}
             aria-label="View grocery list"
             style={{ padding: '6px 10px', fontSize: 12 }}>
@@ -545,6 +698,15 @@ export function PlanTab({ s }) {
         <GroceryListSheet
           groceryItems={groceryItems}
           onClose={() => setShowGrocery(false)}
+        />
+      )}
+
+      {/* AI meal plan sheet */}
+      {showAIPlan && (
+        <AIMealPlanSheet
+          s={s}
+          onApplyPlan={applyAIPlan}
+          onClose={() => setShowAIPlan(false)}
         />
       )}
     </div>

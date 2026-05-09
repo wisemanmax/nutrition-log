@@ -23,20 +23,61 @@ function MacroPill({ label, value, color }) {
   );
 }
 
+// ─── Ingredient quantity parser ───────────────────────────────────────────────
+// Extracts grams estimate and clean food name from raw ingredient strings.
+
+const UNIT_TO_G = {
+  g: 1, gram: 1, grams: 1,
+  kg: 1000, kilogram: 1000,
+  oz: 28.35, ounce: 28.35, ounces: 28.35,
+  lb: 453.6, lbs: 453.6, pound: 453.6, pounds: 453.6,
+  cup: 240, cups: 240,
+  tbsp: 15, tablespoon: 15, tablespoons: 15,
+  tsp: 5, teaspoon: 5, teaspoons: 5,
+  ml: 1, milliliter: 1,
+};
+
+const FRACTION_MAP = { '½': 0.5, '⅓': 0.333, '⅔': 0.667, '¼': 0.25, '¾': 0.75, '⅛': 0.125 };
+
+function parseIngredient(raw) {
+  // Normalize unicode fractions
+  let str = raw.trim();
+  Object.entries(FRACTION_MAP).forEach(([f, v]) => { str = str.replace(new RegExp(f, 'g'), ` ${v}`); });
+
+  // Match pattern: [number] [unit] [food name]
+  const m = str.match(/^([\d./ ]+)\s*([a-zA-Z]+)?\s+(.+)/);
+  if (!m) return { raw, searchName: str, servingG: 100 };
+
+  const qty = m[1].trim().includes('/') ? (() => {
+    const [n, d] = m[1].trim().split('/');
+    return parseFloat(n) / parseFloat(d);
+  })() : parseFloat(m[1].trim()) || 1;
+
+  const unit = (m[2] || '').toLowerCase();
+  const name = m[3]?.split(',')[0]?.trim() || str; // take part before first comma
+
+  const grams = UNIT_TO_G[unit] ? Math.round(qty * UNIT_TO_G[unit]) : 100;
+
+  return { raw, searchName: name, servingG: Math.max(1, grams) };
+}
+
 // ─── Schema.org Recipe JSON-LD parser ────────────────────────────────────────
 
 function parseSchemaOrgRecipe(jsonLd) {
   const data = Array.isArray(jsonLd) ? jsonLd.find(d => d['@type'] === 'Recipe') : jsonLd;
   if (!data || data['@type'] !== 'Recipe') return null;
 
-  const ingredients = (data.recipeIngredient || []).map(raw => ({
-    raw,
-    // Try to extract a quantity and name for display; actual nutrition search done by user
-    id: uid(),
-    name: raw,
-    qty: 0, cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sodium: 0, servingG: 100,
-    source: 'manual',
-  }));
+  const ingredients = (data.recipeIngredient || []).map(raw => {
+    const { searchName, servingG } = parseIngredient(raw);
+    return {
+      raw,
+      id: uid(),
+      name: searchName,
+      qty: servingG, servingG,
+      cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sodium: 0,
+      source: 'manual',
+    };
+  });
 
   const yields = data.recipeYield;
   const servings = (() => {
@@ -45,6 +86,12 @@ function parseSchemaOrgRecipe(jsonLd) {
     return isNaN(n) ? 1 : n;
   })();
 
+  // Resolve image — schema.org image can be string, array, or object
+  const rawImg = data.image;
+  const image = typeof rawImg === 'string' ? rawImg
+    : Array.isArray(rawImg) ? (typeof rawImg[0] === 'string' ? rawImg[0] : rawImg[0]?.url || '')
+    : rawImg?.url || '';
+
   return {
     name: data.name || '',
     description: data.description || '',
@@ -52,7 +99,8 @@ function parseSchemaOrgRecipe(jsonLd) {
     ingredients,
     rawIngredients: data.recipeIngredient || [],
     sourceUrl: data.url || '',
-    image: (Array.isArray(data.image) ? data.image[0] : data.image) || '',
+    image,
+    cookTime: data.totalTime || data.cookTime || '',
   };
 }
 
@@ -87,36 +135,56 @@ function UrlImportSheet({ onImport, onClose }) {
 
   const fetchRecipe = async () => {
     const trimmed = url.trim();
-    if (!trimmed) return;
+    if (!trimmed || !trimmed.startsWith('http')) {
+      setError('Please enter a valid URL starting with https://');
+      return;
+    }
     setLoading(true);
     setError('');
     setPreview(null);
 
-    try {
-      // Use a CORS proxy for client-side fetch (allorigins.win is free)
-      const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(trimmed)}`;
-      const res = await fetch(proxy, { signal: AbortSignal.timeout(10000) });
-      if (!res.ok) throw new Error('Could not fetch page');
-      const data = await res.json();
-      const html = data.contents;
+    // Multiple CORS proxies — try in order
+    const PROXIES = [
+      (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+      (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    ];
 
-      const jsonLd = extractJsonLdFromHtml(html);
-      if (!jsonLd) {
-        setError('No recipe data found on this page. The site may not use standard recipe markup.');
-        setLoading(false);
-        return;
-      }
-
-      const parsed = parseSchemaOrgRecipe(jsonLd);
-      if (!parsed) {
-        setError('Could not parse recipe data from this page.');
-        setLoading(false);
-        return;
-      }
-      setPreview(parsed);
-    } catch (e) {
-      setError('Failed to fetch the recipe. Check the URL and try again.');
+    let html = null;
+    for (const makeProxy of PROXIES) {
+      try {
+        const res = await fetch(makeProxy(trimmed), { signal: AbortSignal.timeout(10000) });
+        if (!res.ok) continue;
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const d = await res.json();
+          html = d.contents || d.data || null;
+        } else {
+          html = await res.text();
+        }
+        if (html) break;
+      } catch { continue; }
     }
+
+    if (!html) {
+      setError('Could not fetch the page. Check the URL and try again.');
+      setLoading(false);
+      return;
+    }
+
+    const jsonLd = extractJsonLdFromHtml(html);
+    if (!jsonLd) {
+      setError('No recipe data found on this page. Try a site like AllRecipes, NYT Cooking, or Serious Eats.');
+      setLoading(false);
+      return;
+    }
+
+    const parsed = parseSchemaOrgRecipe(jsonLd);
+    if (!parsed) {
+      setError('Could not parse the recipe format from this page.');
+      setLoading(false);
+      return;
+    }
+    setPreview(parsed);
     setLoading(false);
   };
 
@@ -166,7 +234,10 @@ function UrlImportSheet({ onImport, onClose }) {
             <img src={preview.image} alt={preview.name} style={{ width: '100%', borderRadius: 8, objectFit: 'cover', maxHeight: 160, marginBottom: 10 }} />
           )}
           <div style={{ fontSize: 15, fontWeight: 700, color: V.text, marginBottom: 4 }}>{preview.name}</div>
-          <div style={{ fontSize: 10, color: V.text3, marginBottom: 8 }}>{preview.servings} serving{preview.servings !== 1 ? 's' : ''}</div>
+          <div style={{ display: 'flex', gap: 10, fontSize: 10, color: V.text3, marginBottom: 8 }}>
+            <span>{preview.servings} serving{preview.servings !== 1 ? 's' : ''}</span>
+            {preview.cookTime && <span>· {preview.cookTime.replace(/PT|M/g, ' ').trim()}</span>}
+          </div>
           <div style={{ fontSize: 11, fontWeight: 700, color: V.text3, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
             Ingredients ({preview.rawIngredients.length})
           </div>

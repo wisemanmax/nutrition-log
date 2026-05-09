@@ -1,19 +1,27 @@
-import { openDB } from 'idb';
+import { openDB, IDBPDatabase } from 'idb';
+import type { FoodItem } from '../types';
 
 const DB_NAME = 'nutrition-log-foods';
 const DB_VERSION = 2;
 const STORE = 'foods';
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const MAX_CACHE_ENTRIES = 2000; // LRU cap
+const MAX_CACHE_ENTRIES = 2000;
 
 const USDA_API_KEY = 'DEMO_KEY'; // Replace with real key; DEMO_KEY: 30 req/hr
 const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1';
 const OFF_BASE = 'https://world.openfoodfacts.org/api/v2';
 
+interface CachedFood extends FoodItem {
+  cachedAt: number;
+  lastUsed: number;
+  query?: string;
+  results?: FoodItem[];
+}
+
 // ─── IndexedDB setup ─────────────────────────────────────────────────────────
 
-let _dbPromise = null;
-function getDb() {
+let _dbPromise: Promise<IDBPDatabase> | null = null;
+function getDb(): Promise<IDBPDatabase> {
   if (!_dbPromise) {
     _dbPromise = openDB(DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion) {
@@ -24,60 +32,54 @@ function getDb() {
           store.createIndex('cachedAt', 'cachedAt');
         }
         if (oldVersion < 2) {
-          // v2: add lastUsed index for LRU eviction
-          const store = db.transaction.objectStore(STORE);
-          if (!store.indexNames.contains('lastUsed')) {
+          const store = (db as any).transaction?.objectStore?.(STORE);
+          if (store && !store.indexNames.contains('lastUsed')) {
             store.createIndex('lastUsed', 'lastUsed');
           }
         }
       },
     });
   }
-  return _dbPromise;
+  return _dbPromise!;
 }
 
-async function cacheGet(id) {
+async function cacheGet(id: string): Promise<CachedFood | null> {
   try {
     const db = await getDb();
-    const item = await db.get(STORE, id);
+    const item = await db.get(STORE, id) as CachedFood | undefined;
     if (!item) return null;
     if (Date.now() - item.cachedAt > CACHE_TTL_MS) return null;
-    // Update last-used for LRU tracking
     await db.put(STORE, { ...item, lastUsed: Date.now() }).catch(() => {});
     return item;
   } catch { return null; }
 }
 
-async function cacheSet(item) {
+async function cacheSet(item: Partial<CachedFood>): Promise<void> {
   try {
     const db = await getDb();
     await db.put(STORE, { ...item, cachedAt: Date.now(), lastUsed: Date.now() });
-    // Async eviction — don't await, fire-and-forget
     cacheEvictLRU(db).catch(() => {});
-  } catch { /* ignore */ }
+  } catch {}
 }
 
-// LRU eviction: remove oldest entries beyond MAX_CACHE_ENTRIES
-async function cacheEvictLRU(db) {
+async function cacheEvictLRU(db: IDBPDatabase): Promise<void> {
   try {
     const count = await db.count(STORE);
     if (count <= MAX_CACHE_ENTRIES) return;
-
     const tx = db.transaction(STORE, 'readwrite');
     const index = tx.store.index('lastUsed');
     let toDelete = count - MAX_CACHE_ENTRIES;
-    let cursor = await index.openCursor(); // ascending = oldest first
+    let cursor = await index.openCursor();
     while (cursor && toDelete > 0) {
       await cursor.delete();
       toDelete--;
       cursor = await cursor.continue();
     }
     await tx.done;
-  } catch { /* ignore */ }
+  } catch {}
 }
 
-// Evict expired entries (TTL-based)
-async function cacheEvict() {
+async function cacheEvict(): Promise<void> {
   try {
     const db = await getDb();
     const tx = db.transaction(STORE, 'readwrite');
@@ -85,21 +87,20 @@ async function cacheEvict() {
     const cutoff = Date.now() - CACHE_TTL_MS;
     let cursor = await index.openCursor();
     while (cursor) {
-      if (cursor.value.cachedAt < cutoff) await cursor.delete();
+      if ((cursor.value as CachedFood).cachedAt < cutoff) await cursor.delete();
       cursor = await cursor.continue();
     }
     await tx.done;
-  } catch { /* ignore */ }
+  } catch {}
 }
 
 // ─── USDA FoodData Central ────────────────────────────────────────────────────
 
-function normalizeUsda(food) {
-  const nutrients = {};
-  (food.foodNutrients || []).forEach(n => {
-    const name = (n.nutrientName || n.name || '').toLowerCase();
-    const val = n.value || n.amount || 0;
-    // Macros
+function normalizeUsda(food: Record<string, any>): FoodItem {
+  const nutrients: Record<string, number> = {};
+  ((food.foodNutrients || []) as Array<Record<string, any>>).forEach(n => {
+    const name = ((n.nutrientName || n.name || '') as string).toLowerCase();
+    const val = (n.value || n.amount || 0) as number;
     if (name.includes('energy') && (name.includes('kcal') || n.unitName === 'kcal')) nutrients.cal = Math.round(val);
     else if (name === 'protein') nutrients.protein = Math.round(val * 10) / 10;
     else if (name.includes('carbohydrate') && !name.includes('sugar')) nutrients.carbs = Math.round(val * 10) / 10;
@@ -109,7 +110,6 @@ function normalizeUsda(food) {
     else if (name.includes('sugars, total')) nutrients.sugar = Math.round(val * 10) / 10;
     else if (name.includes('saturated')) nutrients.satFat = Math.round(val * 10) / 10;
     else if (name.includes('cholesterol')) nutrients.cholesterol = Math.round(val);
-    // Minerals
     else if (name.includes('calcium')) nutrients.calcium = Math.round(val);
     else if (name === 'iron, fe' || name.includes('iron,')) nutrients.iron = Math.round(val * 100) / 100;
     else if (name.includes('potassium')) nutrients.potassium = Math.round(val);
@@ -117,7 +117,6 @@ function normalizeUsda(food) {
     else if (name.includes('zinc')) nutrients.zinc = Math.round(val * 10) / 10;
     else if (name.includes('phosphorus')) nutrients.phosphorus = Math.round(val);
     else if (name.includes('selenium')) nutrients.selenium = Math.round(val * 10) / 10;
-    // Vitamins
     else if (name.includes('vitamin c')) nutrients.vitaminC = Math.round(val);
     else if (name.includes('vitamin d')) nutrients.vitaminD = Math.round(val * 10) / 10;
     else if (name.includes('vitamin a,')) nutrients.vitaminA = Math.round(val);
@@ -136,12 +135,12 @@ function normalizeUsda(food) {
   });
 
   return {
-    id: `usda-${food.fdcId}`,
+    id: `usda-${food.fdcId as string}`,
     fdcId: food.fdcId,
-    name: food.description || food.lowercaseDescription || 'Unknown',
-    brand: food.brandOwner || food.brandName || '',
-    servingG: food.servingSize || 100,
-    servingUnit: food.servingSizeUnit || 'g',
+    name: (food.description || food.lowercaseDescription || 'Unknown') as string,
+    brand: (food.brandOwner || food.brandName || '') as string,
+    servingG: (food.servingSize || 100) as number,
+    servingUnit: (food.servingSizeUnit || 'g') as string,
     source: 'usda',
     cal: nutrients.cal || 0,
     protein: nutrients.protein || 0,
@@ -150,55 +149,51 @@ function normalizeUsda(food) {
     fiber: nutrients.fiber || 0,
     sodium: nutrients.sodium || 0,
     ...nutrients,
-  };
+  } as FoodItem;
 }
 
-async function searchUsda(query, pageSize = 20) {
+async function searchUsda(query: string, pageSize = 20): Promise<FoodItem[]> {
   const cacheKey = `usda-search-${query.toLowerCase().trim()}`;
   const cached = await cacheGet(cacheKey);
-  if (cached) return cached.results;
-
+  if (cached?.results) return cached.results;
   try {
     const res = await fetch(
       `${USDA_BASE}/foods/search?query=${encodeURIComponent(query)}&pageSize=${pageSize}&api_key=${USDA_API_KEY}`,
       { signal: AbortSignal.timeout(5000) },
     );
     if (!res.ok) return [];
-    const data = await res.json();
+    const data = await res.json() as { foods?: Record<string, any>[] };
     const results = (data.foods || []).map(normalizeUsda);
-    await cacheSet({ id: cacheKey, results, query: query.toLowerCase().trim() });
+    await cacheSet({ id: cacheKey, results, query: query.toLowerCase().trim() } as any);
     return results;
   } catch { return []; }
 }
 
-async function getUsdaById(fdcId) {
+async function getUsdaById(fdcId: string): Promise<FoodItem | null> {
   const cacheKey = `usda-${fdcId}`;
   const cached = await cacheGet(cacheKey);
-  if (cached) return cached;
-
+  if (cached) return cached as FoodItem;
   try {
-    const res = await fetch(`${USDA_BASE}/food/${fdcId}?api_key=${USDA_API_KEY}`, {
-      signal: AbortSignal.timeout(5000),
-    });
+    const res = await fetch(`${USDA_BASE}/food/${fdcId}?api_key=${USDA_API_KEY}`, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) return null;
-    const food = await res.json();
+    const food = await res.json() as Record<string, any>;
     const normalized = normalizeUsda(food);
-    await cacheSet(normalized);
+    await cacheSet(normalized as any);
     return normalized;
   } catch { return null; }
 }
 
 // ─── Open Food Facts ──────────────────────────────────────────────────────────
 
-function normalizeOff(product) {
-  const n = product.nutriments || {};
+function normalizeOff(product: Record<string, any>): FoodItem {
+  const n = (product.nutriments || {}) as Record<string, number>;
   return {
     id: `off-${product.code || product._id}`,
     barcode: product.code || product._id,
-    name: product.product_name || product.product_name_en || 'Unknown',
-    brand: product.brands || '',
+    name: (product.product_name || product.product_name_en || 'Unknown') as string,
+    brand: (product.brands || '') as string,
     servingG: parseFloat(product.serving_quantity) || 100,
-    servingUnit: product.serving_quantity_unit || 'g',
+    servingUnit: (product.serving_quantity_unit || 'g') as string,
     source: 'off',
     cal: Math.round(n['energy-kcal_100g'] || (n.energy_100g || 0) / 4.184 || 0),
     protein: Math.round((n.proteins_100g || 0) * 10) / 10,
@@ -213,35 +208,31 @@ function normalizeOff(product) {
     potassium: Math.round((n.potassium_100g || 0) * 1000),
     vitaminC: Math.round((n['vitamin-c_100g'] || 0) * 1000),
     vitaminD: Math.round((n['vitamin-d_100g'] || 0) * 1000000) / 10,
-    allergens: product.allergens_tags || [],
-    dietaryModes: product.labels_tags || [],
-    imageUrl: product.image_small_url || product.image_url || '',
-  };
+    allergens: (product.allergens_tags || []) as string[],
+    dietaryModes: (product.labels_tags || []) as string[],
+    imageUrl: (product.image_small_url || product.image_url || '') as string,
+  } as FoodItem;
 }
 
-async function lookupBarcode(barcode) {
+async function lookupBarcode(barcode: string): Promise<FoodItem | null> {
   const cacheKey = `off-${barcode}`;
   const cached = await cacheGet(cacheKey);
-  if (cached) return cached;
-
+  if (cached) return cached as FoodItem;
   try {
-    const res = await fetch(`${OFF_BASE}/product/${barcode}.json`, {
-      signal: AbortSignal.timeout(5000),
-    });
+    const res = await fetch(`${OFF_BASE}/product/${barcode}.json`, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) return null;
-    const data = await res.json();
+    const data = await res.json() as { status: number; product?: Record<string, any> };
     if (data.status !== 1 || !data.product) return null;
     const normalized = normalizeOff(data.product);
-    await cacheSet(normalized);
+    await cacheSet(normalized as any);
     return normalized;
   } catch { return null; }
 }
 
-async function searchOff(query, pageSize = 20) {
+async function searchOff(query: string, pageSize = 20): Promise<FoodItem[]> {
   const cacheKey = `off-search-${query.toLowerCase().trim()}`;
   const cached = await cacheGet(cacheKey);
-  if (cached) return cached.results;
-
+  if (cached?.results) return cached.results;
   try {
     const res = await fetch(
       `${OFF_BASE}/search?search_terms=${encodeURIComponent(query)}&page_size=${pageSize}&json=true` +
@@ -249,9 +240,9 @@ async function searchOff(query, pageSize = 20) {
       { signal: AbortSignal.timeout(5000) },
     );
     if (!res.ok) return [];
-    const data = await res.json();
+    const data = await res.json() as { products?: Record<string, any>[] };
     const results = (data.products || []).map(normalizeOff).filter(f => f.cal > 0 || f.name !== 'Unknown');
-    await cacheSet({ id: cacheKey, results, query: query.toLowerCase().trim() });
+    await cacheSet({ id: cacheKey, results, query: query.toLowerCase().trim() } as any);
     return results;
   } catch { return []; }
 }
@@ -259,38 +250,32 @@ async function searchOff(query, pageSize = 20) {
 // ─── Unified search ───────────────────────────────────────────────────────────
 
 export const FoodDb = {
-  async search(query, opts = {}) {
+  async search(query: string, opts: { pageSize?: number; source?: 'auto' | 'usda' | 'off' } = {}): Promise<FoodItem[]> {
     const q = query.trim();
     if (!q) return [];
     const { pageSize = 20, source = 'auto' } = opts;
-
     if (source === 'off') return searchOff(q, pageSize);
     if (source === 'usda') return searchUsda(q, pageSize);
-
-    // Auto: USDA first, merge unique OFF results after
-    const [usda, off] = await Promise.all([
-      searchUsda(q, pageSize),
-      searchOff(q, Math.min(pageSize, 10)),
-    ]);
+    const [usda, off] = await Promise.all([searchUsda(q, pageSize), searchOff(q, Math.min(pageSize, 10))]);
     const seen = new Set(usda.map(f => f.name.toLowerCase()));
     const unique = off.filter(f => !seen.has(f.name.toLowerCase()));
     return [...usda, ...unique].slice(0, pageSize);
   },
 
-  async lookupBarcode(barcode) {
+  async lookupBarcode(barcode: string): Promise<FoodItem | null> {
     return lookupBarcode(barcode);
   },
 
-  async getById(id) {
+  async getById(id: string): Promise<FoodItem | null> {
     if (id.startsWith('usda-')) return getUsdaById(id.replace('usda-', ''));
-    return cacheGet(id);
+    return cacheGet(id) as Promise<FoodItem | null>;
   },
 
-  scale(food, grams) {
+  scale(food: FoodItem, grams: number): FoodItem {
     const base = food.servingG || 100;
     const r = grams / base;
-    const round1 = v => Math.round((v || 0) * r * 10) / 10;
-    const roundInt = v => Math.round((v || 0) * r);
+    const round1 = (v: number | undefined) => Math.round((v || 0) * r * 10) / 10;
+    const roundInt = (v: number | undefined) => Math.round((v || 0) * r);
     return {
       ...food,
       qty: grams,

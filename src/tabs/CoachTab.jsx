@@ -2,8 +2,55 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { V, Haptic } from '../utils/theme';
 import { Card, Btn } from '../components/ui';
 import { Analytics } from '../utils/analytics';
+import { Flags } from '../utils/flags';
 import { ago } from '../utils/helpers';
 import { estimateTDEE, detectPlateau } from '../utils/predictions';
+
+// Build context payload for the AI coach edge function (last 90 days)
+function buildCoachContext(s) {
+  const nutrition = s.nutrition || [];
+  const body = s.body || [];
+  const goals = s.goals || {};
+  const water = s.water || {};
+  const mood = s.mood || {};
+  const recent90 = [...nutrition]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 90);
+  const recentBody = [...body]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 90);
+  const avg7 = (key) => {
+    const days = Array.from({ length: 7 }, (_, i) => ago(i))
+      .map(d => nutrition.find(n => n.date === d))
+      .filter(Boolean);
+    return days.length ? Math.round(days.reduce((s, d) => s + (d[key] || 0), 0) / days.length) : 0;
+  };
+  return {
+    goals,
+    units: s.units || 'lbs',
+    profile: { firstName: s.profile?.firstName },
+    summary7d: { cal: avg7('cal'), protein: avg7('protein'), fiber: avg7('fiber'), sodium: avg7('sodium'), daysLogged: recent90.filter(d => { const cutoff = ago(6); return d.date >= cutoff; }).length },
+    recentNutrition: recent90.slice(0, 14).map(d => ({ date: d.date, cal: d.cal, protein: d.protein, carbs: d.carbs, fat: d.fat, fiber: d.fiber })),
+    recentBody: recentBody.slice(0, 14).map(b => ({ date: b.date, weight: b.weight, bodyFat: b.bodyFat })),
+    recentMood: Object.entries(mood).sort(([a], [b]) => b.localeCompare(a)).slice(0, 7).map(([date, m]) => ({ date, ...m })),
+    recentWater: Object.entries(water).sort(([a], [b]) => b.localeCompare(a)).slice(0, 7).map(([date, count]) => ({ date, count })),
+  };
+}
+
+async function callAICoach(question, context) {
+  try {
+    const res = await fetch('/api/coach', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, context }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.response || null;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Insight engine ───────────────────────────────────────────────────────────
 
@@ -21,7 +68,7 @@ function pearson(xs, ys) {
   return denom === 0 ? null : parseFloat((num / denom).toFixed(2));
 }
 
-function generateInsights(s) {
+export function generateInsights(s) {
   const insights = [];
   const goals = s.goals || {};
   const nutrition = s.nutrition || [];
@@ -346,15 +393,24 @@ export function CoachTab({ s, dispatch }) {
 
   const insights = useMemo(() => generateInsights(s), [s]);
 
+  const aiEnabled = Flags.get('aiCoach');
+
   const send = async (text) => {
     const q = text.trim();
     if (!q) return;
     setMessages(prev => [...prev, { role: 'user', content: q }]);
     setInput('');
     setLoading(true);
-    Analytics.track('coach_message', { length: q.length });
-    await new Promise(r => setTimeout(r, 500));
-    const response = generateResponse(q, s);
+    Analytics.track('coach_message', { length: q.length, ai: aiEnabled });
+    let response;
+    if (aiEnabled) {
+      const context = buildCoachContext(s);
+      response = await callAICoach(q, context);
+      if (!response) response = generateResponse(q, s); // fallback to local
+    } else {
+      await new Promise(r => setTimeout(r, 500));
+      response = generateResponse(q, s);
+    }
     setMessages(prev => [...prev, { role: 'assistant', content: response }]);
     setLoading(false);
     Haptic.light();

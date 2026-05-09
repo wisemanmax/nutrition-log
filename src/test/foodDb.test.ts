@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FoodDb } from '../utils/foodDb';
+import type { FoodItem } from '../types';
 
-// Mock idb so no real IndexedDB operations occur in tests
 vi.mock('idb', () => ({
   openDB: vi.fn(() => Promise.resolve({
     get: vi.fn(() => Promise.resolve(null)),
     put: vi.fn(() => Promise.resolve()),
+    count: vi.fn(() => Promise.resolve(0)),
     transaction: vi.fn(() => ({
       store: { index: vi.fn(() => ({ openCursor: vi.fn(() => Promise.resolve(null)) })) },
       done: Promise.resolve(),
@@ -13,7 +14,6 @@ vi.mock('idb', () => ({
   })),
 }));
 
-// Mock fetch
 const MOCK_USDA = {
   foods: [
     {
@@ -36,38 +36,56 @@ const MOCK_USDA = {
 
 beforeEach(() => {
   global.fetch = vi.fn(() =>
-    Promise.resolve({
-      ok: true,
-      json: () => Promise.resolve(MOCK_USDA),
-    })
-  );
+    Promise.resolve({ ok: true, json: () => Promise.resolve(MOCK_USDA) }),
+  ) as unknown as typeof fetch;
 });
 
 describe('FoodDb.scale', () => {
+  const baseFood: FoodItem = {
+    id: 'test-1', name: 'Chicken Breast', source: 'usda',
+    servingG: 100, cal: 165, protein: 31, carbs: 0, fat: 3.6, fiber: 0, sodium: 74,
+  };
+
   it('scales calories proportionally', () => {
-    const food = { cal: 165, protein: 31, carbs: 0, fat: 3.6, fiber: 0, sodium: 74, servingG: 100, sugar: 0, satFat: 0 };
-    const scaled = FoodDb.scale(food, 200);
+    const scaled = FoodDb.scale(baseFood, 200);
     expect(scaled.cal).toBe(330);
     expect(scaled.protein).toBe(62);
     expect(scaled.fat).toBe(7.2);
   });
 
   it('handles zero base gracefully', () => {
-    const food = { cal: 100, protein: 10, carbs: 5, fat: 3, fiber: 1, sodium: 50, servingG: 0, sugar: 0, satFat: 0 };
-    // servingG=0 → ratio = Infinity, but we just ensure no crash
+    const food: FoodItem = { ...baseFood, servingG: 0 };
     expect(() => FoodDb.scale(food, 100)).not.toThrow();
   });
 
   it('rounds calories to integer', () => {
-    const food = { cal: 100, protein: 10, carbs: 5, fat: 3, fiber: 1, sodium: 50, servingG: 100, sugar: 0, satFat: 0 };
-    const scaled = FoodDb.scale(food, 75);
+    const scaled = FoodDb.scale(baseFood, 75);
     expect(Number.isInteger(scaled.cal)).toBe(true);
   });
 
   it('scales to half-serving', () => {
-    const food = { cal: 200, protein: 20, carbs: 10, fat: 8, fiber: 2, sodium: 100, servingG: 100, sugar: 0, satFat: 0 };
+    const food: FoodItem = { ...baseFood, cal: 200, protein: 20, carbs: 10, fat: 8, fiber: 2, sodium: 100 };
     const scaled = FoodDb.scale(food, 50);
     expect(scaled.cal).toBe(100);
     expect(scaled.protein).toBe(10);
+  });
+
+  it('scales micronutrients', () => {
+    const food: FoodItem = { ...baseFood, vitaminC: 20, calcium: 100 };
+    const scaled = FoodDb.scale(food, 200);
+    expect(scaled.vitaminC).toBe(40);
+    expect(scaled.calcium).toBe(200);
+  });
+});
+
+describe('FoodDb.search', () => {
+  it('returns empty array for empty query', async () => {
+    const results = await FoodDb.search('');
+    expect(results).toEqual([]);
+  });
+
+  it('returns results for valid query', async () => {
+    const results = await FoodDb.search('chicken');
+    expect(Array.isArray(results)).toBe(true);
   });
 });

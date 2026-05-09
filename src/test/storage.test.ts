@@ -6,7 +6,7 @@ describe('LS (localStorage)', () => {
 
   it('set and get round-trip', () => {
     LS.set('test-key', { foo: 'bar', num: 42 });
-    const result = LS.get('test-key');
+    const result = LS.get<{ foo: string; num: number }>('test-key');
     expect(result).toEqual({ foo: 'bar', num: 42 });
   });
 
@@ -24,5 +24,16 @@ describe('LS (localStorage)', () => {
     LS.set('overwrite', 'first');
     LS.set('overwrite', 'second');
     expect(LS.get('overwrite')).toBe('second');
+  });
+
+  it('remove clears a key', () => {
+    LS.set('to-remove', 'value');
+    LS.remove('to-remove');
+    expect(LS.get('to-remove')).toBeNull();
+  });
+
+  it('handles JSON parse errors gracefully', () => {
+    localStorage.setItem('bad-json', '{not valid json}');
+    expect(LS.get('bad-json')).toBeNull();
   });
 });
