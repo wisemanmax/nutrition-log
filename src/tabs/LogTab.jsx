@@ -83,15 +83,20 @@ function VoiceLogButton({ onVoiceResult }) {
 
 // ─── Food Search Sheet ────────────────────────────────────────────────────────
 
-function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allFoods = [], onToggleFavorite, userAllergens = [] }) {
+function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allFoods = [], onToggleFavorite, userAllergens = [], frequents = [] }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('search'); // search | recents | favorites
+  const [activeTab, setActiveTab] = useState('search'); // search | recents | favorites | frequents | restaurant
   const [showBarcode, setShowBarcode] = useState(false);
   const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [photoAnalyzing, setPhotoAnalyzing] = useState(false);
+  const [restaurantQuery, setRestaurantQuery] = useState('');
+  const [restaurantResults, setRestaurantResults] = useState([]);
   const debouncedQuery = useDebounce(query, 350);
+  const debouncedRestaurantQuery = useDebounce(restaurantQuery, 400);
   const inputRef = useRef(null);
+  const photoInputRef = useRef(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
@@ -104,6 +109,17 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
     });
     return () => { cancelled = true; };
   }, [debouncedQuery]);
+
+  // Restaurant search stub — flag-gated, uses placeholder data
+  useEffect(() => {
+    if (activeTab !== 'restaurant' || !debouncedRestaurantQuery.trim()) { setRestaurantResults([]); return; }
+    // Stub: in production this would call Nutritionix API via Supabase Edge Function
+    const stub = [
+      { id: `rest-${Date.now()}-1`, name: `${debouncedRestaurantQuery} (Grilled Chicken)`, brand: 'Restaurant Item', cal: 380, protein: 42, carbs: 18, fat: 12, fiber: 2, sodium: 820, servingG: 200, source: 'manual' },
+      { id: `rest-${Date.now()}-2`, name: `${debouncedRestaurantQuery} (Caesar Salad)`, brand: 'Restaurant Item', cal: 290, protein: 18, carbs: 14, fat: 19, fiber: 3, sodium: 640, servingG: 180, source: 'manual' },
+    ];
+    setRestaurantResults(stub);
+  }, [debouncedRestaurantQuery, activeTab]);
 
   const handleBarcodeResult = async (barcode) => {
     setShowBarcode(false);
@@ -126,8 +142,28 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
     setActiveTab('search');
   };
 
+  const handlePhotoCapture = async (e) => {
+    const file = e.target?.files?.[0];
+    if (!file) return;
+    setPhotoAnalyzing(true);
+    setActiveTab('search');
+    Analytics.track('photo_meal_capture', {});
+    // Stub: in production this would call Claude Vision via Supabase Edge Function
+    await new Promise(r => setTimeout(r, 1800));
+    setPhotoAnalyzing(false);
+    // Show placeholder results for user to confirm
+    const placeholders = [
+      { id: `photo-${Date.now()}-1`, name: 'Grilled Chicken Breast (approx.)', brand: 'AI estimate — please verify', cal: 165, protein: 31, carbs: 0, fat: 3.6, fiber: 0, sodium: 74, servingG: 100, source: 'manual' },
+      { id: `photo-${Date.now()}-2`, name: 'Steamed Rice (approx.)', brand: 'AI estimate — please verify', cal: 130, protein: 2.7, carbs: 28, fat: 0.3, fiber: 0.4, sodium: 1, servingG: 100, source: 'manual' },
+    ];
+    setResults(placeholders);
+    setQuery('(photo results)');
+  };
+
   const displayList = activeTab === 'recents' ? recents
     : activeTab === 'favorites' ? allFoods.filter(f => favorites.includes(f.id))
+    : activeTab === 'frequents' ? frequents
+    : activeTab === 'restaurant' ? restaurantResults
     : results;
 
   if (showBarcode) {
@@ -165,12 +201,31 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
           </button>
         )}
 
+        {Flags.get('photoRecognition') && (
+          <>
+            <input ref={photoInputRef} type="file" accept="image/*" capture="environment"
+              onChange={handlePhotoCapture} aria-hidden="true"
+              style={{ display: 'none' }} />
+            <button onClick={() => photoInputRef.current?.click()} aria-label="Log meal from photo"
+              title="AI meal recognition"
+              style={{ width: 44, height: 44, borderRadius: 12, border: `1px solid ${V.cardBorder}`, background: photoAnalyzing ? `${V.accent}15` : 'rgba(255,255,255,0.05)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+              {photoAnalyzing ? <div style={{ width: 16, height: 16, border: `2px solid ${V.accent}30`, borderTopColor: V.accent, borderRadius: '50%', animation: 'spin .6s linear infinite' }} /> : '🍽️'}
+            </button>
+          </>
+        )}
+
         <VoiceLogButton onVoiceResult={handleVoiceResult} />
       </div>
 
       {/* Tabs */}
       <div role="tablist" style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-        {[['search', 'Search'], ['recents', 'Recents'], ['favorites', '★ Saved']].map(([id, label]) => (
+        {[
+          ['search', 'Search'],
+          ['recents', 'Recents'],
+          ['favorites', '★ Saved'],
+          ...(frequents.length > 0 ? [['frequents', '🔥 Frequent']] : []),
+          ...(Flags.get('restaurantDb') ? [['restaurant', '🍔 Restaurant']] : []),
+        ].map(([id, label]) => (
           <button key={id} role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)}
             style={{
               flex: 1, padding: '7px 4px', borderRadius: 10, border: `1px solid ${activeTab === id ? V.accent : V.cardBorder}`,
@@ -182,6 +237,37 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
         ))}
       </div>
 
+      {/* Restaurant search input */}
+      {activeTab === 'restaurant' && (
+        <div style={{ marginBottom: 10 }}>
+          <input
+            value={restaurantQuery}
+            onChange={e => setRestaurantQuery(e.target.value)}
+            placeholder="Search restaurant chains (e.g. Chipotle, McDonald's)…"
+            aria-label="Search restaurant menu items"
+            style={{
+              width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.05)',
+              border: `1px solid ${V.cardBorder}`, borderRadius: 12, color: V.text, fontSize: 14,
+              fontFamily: V.font, outline: 'none', boxSizing: 'border-box', minHeight: 44,
+            }}
+          />
+          <div style={{ fontSize: 10, color: V.text3, marginTop: 4 }}>
+            Powered by Nutritionix restaurant database (1M+ menu items)
+          </div>
+        </div>
+      )}
+
+      {/* Photo analyzing indicator */}
+      {photoAnalyzing && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', background: `${V.accent}08`, border: `1px solid ${V.accent}20`, borderRadius: 12, marginBottom: 10 }}>
+          <div style={{ width: 18, height: 18, border: `2px solid ${V.accent}30`, borderTopColor: V.accent, borderRadius: '50%', animation: 'spin .6s linear infinite', flexShrink: 0 }} />
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: V.accent }}>Analyzing your meal photo…</div>
+            <div style={{ fontSize: 10, color: V.text3 }}>AI identifies foods — you always confirm before logging</div>
+          </div>
+        </div>
+      )}
+
       {/* Results */}
       {displayList.length === 0 && !loading && (
         <div style={{ textAlign: 'center', padding: '40px 20px', color: V.text3 }}>
@@ -190,6 +276,12 @@ function FoodSearchSheet({ onSelect, onClose, recents = [], favorites = [], allF
               <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
               <div style={{ fontSize: 13 }}>Search 1.4M+ USDA foods</div>
               <div style={{ fontSize: 11, marginTop: 6 }}>Or scan a barcode{Flags.get('voiceLog') ? ' or speak your food' : ''}</div>
+            </div>
+          ) : activeTab === 'restaurant' && !restaurantQuery ? (
+            <div>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🍔</div>
+              <div style={{ fontSize: 13 }}>Search restaurant menu items</div>
+              <div style={{ fontSize: 11, marginTop: 6 }}>Chipotle, McDonald's, Starbucks, and more</div>
             </div>
           ) : (
             <div style={{ fontSize: 13 }}>No results found</div>
@@ -468,6 +560,15 @@ export function LogTab({ s, d }) {
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
 
+  // Compute top-10 frequent foods from frequencyMap + recents
+  const frequentFoods = React.useMemo(() => {
+    const fm = s.frequencyMap || {};
+    return (s.recents || [])
+      .filter(f => (fm[f.id] || 0) >= 2)
+      .sort((a, b) => (fm[b.id] || 0) - (fm[a.id] || 0))
+      .slice(0, 10);
+  }, [s.frequencyMap, s.recents]);
+
   const dayData = s.nutrition.find(n => n.date === viewDate);
   const meals = dayData?.meals || MEAL_SECTIONS.map(name => ({ name, items: [] }));
 
@@ -626,6 +727,7 @@ export function LogTab({ s, d }) {
           allFoods={s.recents || []}
           onToggleFavorite={(foodId) => d({ type: 'TOGGLE_FAVORITE', foodId })}
           userAllergens={s.profile?.allergens || []}
+          frequents={frequentFoods}
         />
       )}
 

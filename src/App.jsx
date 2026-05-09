@@ -29,6 +29,7 @@ const PERSIST_KEYS = [
   { key: 'nl-recipes', stateKey: 'recipes' },
   { key: 'nl-favorites', stateKey: 'favorites' },
   { key: 'nl-recents', stateKey: 'recents' },
+  { key: 'nl-freq', stateKey: 'frequencyMap' },
   { key: 'nl-templates', stateKey: 'templates' },
   { key: 'nl-fasting', stateKey: 'fasting' },
 ];
@@ -65,7 +66,7 @@ export default function App() {
     if (s.onboarded && s.profile?.email) CloudSync.debouncedPush(s);
   }, [
     s.nutrition, s.body, s.goals, s.units, s.profile, s.onboarded,
-    s.water, s.mood, s.recipes, s.favorites, s.recents, s.templates, s.fasting, s.loaded
+    s.water, s.mood, s.recipes, s.favorites, s.recents, s.frequencyMap, s.templates, s.fasting, s.loaded
   ]);
 
   // --- Sync on app open ---

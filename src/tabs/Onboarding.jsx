@@ -8,6 +8,7 @@ import { CloudSync, SYNC_URL } from '../utils/sync';
 import { AuthToken, SessionManager } from '../utils/auth';
 import { SentryUtil } from '../utils/sentry';
 import { init } from '../state/reducer';
+import { ALLERGENS, DIETARY_MODES } from '../utils/allergens';
 
 // --- Profanity filter ---
 const BLOCKED_WORDS=["fuck","shit","ass","bitch","dick","pussy","cunt","damn","cock","porn","nigger","nigga","faggot","retard","whore","slut","bastard"];
@@ -40,7 +41,7 @@ export function Onboarding({d}){
   const [tourIdx,setTourIdx]=useState(0);
   const [units,setUnits]=useState("lbs");
   const [goals,setGoals]=useState({cal:"2400",protein:"180",carbs:"250",fat:"70"});
-  const [profile,setProfile]=useState({firstName:"",lastName:"",nickname:"",email:"",dob:"",sex:"",state:"",height:"",city:"",zipCode:""});
+  const [profile,setProfile]=useState({firstName:"",lastName:"",nickname:"",email:"",dob:"",sex:"",state:"",height:"",city:"",zipCode:"",dietaryModes:[],allergens:[]});
   const [agreed,setAgreed]=useState(false);
   const [accountPin,setAccountPin]=useState("");
   const [confirmPin,setConfirmPin]=useState("");
@@ -489,8 +490,57 @@ export function Onboarding({d}){
           </div>
         )}
 
-        {/* --- Step 5: PIN Creation --- */}
+        {/* --- Step 5: Dietary Modes & Allergens --- */}
         {step===5&&(
+          <div style={{animation:"fadeUp .4s ease"}}>
+            <div style={{textAlign:"center",marginBottom:16}}>
+              <div style={{fontSize:36,marginBottom:8}}>🥗</div>
+              <div style={{fontSize:20,fontWeight:800,color:V.text}}>Dietary Preferences</div>
+              <div style={{fontSize:12,color:V.text3,lineHeight:1.6}}>Optional — helps us filter food search results</div>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:11,fontWeight:700,color:V.text3,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Dietary Modes</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {DIETARY_MODES.map(mode=>{
+                  const active=(profile.dietaryModes||[]).includes(mode.id);
+                  return(
+                    <button key={mode.id} onClick={()=>setProfile(p=>({...p,dietaryModes:active?(p.dietaryModes||[]).filter(m=>m!==mode.id):[...(p.dietaryModes||[]),mode.id]}))}
+                      style={{padding:"6px 12px",borderRadius:20,border:`1px solid ${active?V.accent:V.cardBorder}`,
+                        background:active?`${V.accent}15`:"transparent",color:active?V.accent:V.text3,
+                        fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:V.font}}>
+                      {mode.icon} {mode.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{marginBottom:20}}>
+              <div style={{fontSize:11,fontWeight:700,color:V.text3,textTransform:"uppercase",letterSpacing:".06em",marginBottom:4}}>Allergen Alerts</div>
+              <div style={{fontSize:10,color:V.text3,marginBottom:8}}>Foods containing these will be flagged in search</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {ALLERGENS.map(a=>{
+                  const active=(profile.allergens||[]).includes(a.id);
+                  return(
+                    <button key={a.id} onClick={()=>setProfile(p=>({...p,allergens:active?(p.allergens||[]).filter(x=>x!==a.id):[...(p.allergens||[]),a.id]}))}
+                      style={{padding:"6px 12px",borderRadius:20,border:`1px solid ${active?V.danger:V.cardBorder}`,
+                        background:active?`${V.danger}12`:"transparent",color:active?V.danger:V.text3,
+                        fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:V.font}}>
+                      {a.icon} {a.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <Btn full onClick={()=>setStep(6)}>Next</Btn>
+            <Btn v="ghost" full onClick={()=>setStep(4)} s={{marginTop:8}}>Back</Btn>
+          </div>
+        )}
+
+        {/* --- Step 6: PIN Creation --- */}
+        {step===6&&(
           <div style={{animation:"fadeUp .4s ease"}}>
             <div style={{textAlign:"center",marginBottom:16}}>
               <div style={{fontSize:36,marginBottom:8}}>&#x1F512;</div>
@@ -501,14 +551,14 @@ export function Onboarding({d}){
             <Field label="Confirm PIN" type="password" value={confirmPin} onChange={v=>{if(/^\d{0,6}$/.test(v))setConfirmPin(v);}} placeholder="******" inputMode="numeric"/>
             {pinError&&<div style={{fontSize:12,color:V.danger,marginBottom:8}}>{pinError}</div>}
             <Btn full onClick={finish} disabled={sending}>{sending?"Creating account...":"Complete Setup"}</Btn>
-            <Btn v="ghost" full onClick={()=>setStep(4)} s={{marginTop:8}}>Back</Btn>
+            <Btn v="ghost" full onClick={()=>setStep(5)} s={{marginTop:8}}>Back</Btn>
           </div>
         )}
 
         {/* Step indicator */}
-        {step>=1&&step<=5&&(
+        {step>=1&&step<=6&&(
           <div style={{display:"flex",justifyContent:"center",gap:4,marginTop:20}}>
-            {[1,2,3,4,5].map(i=>(
+            {[1,2,3,4,5,6].map(i=>(
               <div key={i} style={{width:step===i?20:8,height:4,borderRadius:2,
                 background:step>=i?V.accent:`${V.accent}20`,transition:"all .3s"}}/>
             ))}
